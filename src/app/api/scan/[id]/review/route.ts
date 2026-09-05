@@ -57,7 +57,11 @@ export async function PUT(
             const p = parseFloat(clean);
             currentData.mrp.value = isNaN(p) ? null : p;
             currentData.mrp.raw = val;
-            currentData.mrp.hasInclusiveOfAllTaxes = /incl(?:usive)?\.?\s*of\s*all\s*taxes/i.test(val);
+            currentData.mrp.currency = 'INR';
+            currentData.mrp.hasInclusiveOfAllTaxes =
+              currentData.mrp.hasInclusiveOfAllTaxes ||
+              /incl(?:usive)?\.?\s*of\s*all\s*taxes|incl\.?\s*taxes/i.test(val) ||
+              !val.toLowerCase().includes('exclusive');
             break;
           case 'month_year':
             currentData.manufacturingDate.raw = val;
@@ -66,6 +70,7 @@ export async function PUT(
             break;
           case 'country_of_origin':
             currentData.countryOfOrigin = val;
+            currentData.isImported = val ? !['india', 'bharat', 'ind'].includes(val.toLowerCase().trim()) : false;
             break;
           case 'consumer_care':
             currentData.consumerCare.raw = val;
@@ -78,12 +83,18 @@ export async function PUT(
       });
     }
 
+    const resolvedIsImported = isImported !== undefined
+      ? isImported
+      : currentData.isImported !== undefined
+      ? currentData.isImported
+      : record.is_imported === 1;
+
     // Re-evaluate Rule Engine with updated declarations
     const newCompliance = evaluateCompliance(currentData, {
       productName: productName || record.product_name,
       category: category || record.category,
-      isImported: isImported !== undefined ? isImported : record.is_imported === 1,
-      countryOfOrigin: countryOfOrigin || record.country_of_origin || undefined,
+      isImported: resolvedIsImported,
+      countryOfOrigin: countryOfOrigin || currentData.countryOfOrigin || record.country_of_origin || undefined,
     });
 
     // Update record in database

@@ -12,8 +12,8 @@ export default function ComplianceReportPage() {
   const id = (params?.id as string) || '1';
 
   const [isLoading, setIsLoading] = useState(true);
-  const [report, setReport] = useState<ComplianceReport>(DEMO_REPORT);
-  const [fontAudits, setFontAudits] = useState<FontReadabilityAudit[]>(DEMO_FONT_AUDITS);
+  const [report, setReport] = useState<ComplianceReport | null>(null);
+  const [fontAudits, setFontAudits] = useState<FontReadabilityAudit[]>([]);
   const [inspectorName, setInspectorName] = useState('Field Inspection Officer');
   const [scanDate, setScanDate] = useState('2026-09-04 17:35 IST');
 
@@ -39,7 +39,7 @@ export default function ComplianceReportPage() {
         }
       })
       .catch((err) => {
-        console.warn('Could not fetch scan report, using defaults:', err);
+        console.warn('Could not fetch scan report:', err);
       })
       .finally(() => {
         setIsLoading(false);
@@ -55,6 +55,7 @@ export default function ComplianceReportPage() {
   };
 
   const handleExportJson = () => {
+    if (!report) return;
     const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(report, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute('href', dataStr);
@@ -63,6 +64,46 @@ export default function ComplianceReportPage() {
     downloadAnchor.click();
     downloadAnchor.remove();
   };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6 max-w-5xl mx-auto py-8">
+        <div className="border border-[#CBD5E1] bg-white p-8 text-center space-y-4 shadow-xs">
+          <div className="inline-block w-8 h-8 border-3 border-[#0A2540] border-t-transparent rounded-full animate-spin" />
+          <div className="space-y-1">
+            <h2 className="text-base font-bold text-[#0A2540] font-mono">
+              GENERATING STATUTORY CERTIFICATE
+            </h2>
+            <p className="text-xs text-[#64748B] font-mono">
+              Compiling Legal Metrology inspection audit trail...
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!report) {
+    return (
+      <div className="space-y-6 max-w-5xl mx-auto py-8">
+        <div className="border border-red-300 bg-red-50 p-8 text-center space-y-4">
+          <span className="text-2xl">⚠️</span>
+          <h2 className="text-base font-bold text-red-900 font-mono">CERTIFICATE NOT FOUND</h2>
+          <p className="text-xs text-red-700 font-mono">
+            Could not find or generate the inspection certificate for this scan.
+          </p>
+          <div className="pt-2">
+            <Link
+              href="/scan"
+              className="px-4 py-2 text-xs font-mono font-bold bg-[#0A2540] text-white hover:bg-[#1E3A8A] transition-colors"
+            >
+              Start New Package Scan &rarr;
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const isCompliant = report.overall_status === 'COMPLIANT';
   const isFail = report.overall_status === 'NON_COMPLIANT';

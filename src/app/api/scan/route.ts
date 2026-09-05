@@ -130,6 +130,10 @@ export async function POST(req: NextRequest) {
         if (matches) {
           m = matches[1];
           b = Buffer.from(matches[2], 'base64');
+        } else if (item.dataUrl.startsWith('data:image/svg+xml;utf8,') || item.dataUrl.startsWith('data:image/svg+xml,')) {
+          m = 'image/svg+xml';
+          const svgContent = decodeURIComponent(item.dataUrl.replace(/^data:image\/svg\+xml(?:;utf8)?,/, ''));
+          b = Buffer.from(svgContent, 'utf8');
         } else {
           b = Buffer.from(item.dataUrl, 'base64');
         }
@@ -171,7 +175,7 @@ export async function POST(req: NextRequest) {
 
     const primaryFace = savedFaces[0];
     const extractedData = extractionResults[0] || {
-      productName: productName || 'Packaged Commodity',
+      productName: productName || null,
       brand: null,
       commodityName: null,
       manufacturer: null,
@@ -179,13 +183,13 @@ export async function POST(req: NextRequest) {
       importer: null,
       address: null,
       pincode: null,
-      mrp: { value: null, currency: null, raw: null, hasInclusiveOfAllTaxes: false },
+      mrp: { value: null, currency: 'INR', raw: null, hasInclusiveOfAllTaxes: false },
       netQuantity: { value: null, unit: null, raw: null, isStandardUnit: false },
       manufacturingDate: { month: null, year: null, raw: null, formatted: null, isCompliantFormat: false },
       expiryDate: { raw: null, expiryFormatted: null },
       consumerCare: { phone: null, email: null, address: null, raw: null },
       countryOfOrigin: countryOfOrigin || 'India',
-      isImported,
+      isImported: isImported || false,
       rawOcrText: '',
       fieldConfidences: {},
       boundingBoxes: {},
@@ -199,45 +203,100 @@ export async function POST(req: NextRequest) {
       }
     });
 
-    // If secondary images (e.g. BACK face) were submitted, merge declarations
+    // If secondary images (e.g. BACK or SIDE face) were submitted, merge declarations comprehensively
     if (savedFaces.length > 1) {
       for (let i = 1; i < savedFaces.length; i++) {
         const secFace = savedFaces[i];
         const secExtracted = extractionResults[i];
         if (!secExtracted) continue;
 
-        // Merge fields if missing in primary extraction
+        // 1. Commodity & Brand Identity
+        if (!extractedData.commodityName && secExtracted.commodityName) {
+          extractedData.commodityName = secExtracted.commodityName;
+        }
+        if (!extractedData.brand && secExtracted.brand) {
+          extractedData.brand = secExtracted.brand;
+        }
+        if (!extractedData.productName && secExtracted.productName) {
+          extractedData.productName = secExtracted.productName;
+        }
+
+        // 2. Manufacturer, Packer & Address
         if (!extractedData.manufacturer && secExtracted.manufacturer) {
           extractedData.manufacturer = secExtracted.manufacturer;
+          if (!extractedData.address) extractedData.address = secExtracted.address;
+          if (!extractedData.pincode) extractedData.pincode = secExtracted.pincode;
+        } else if (!extractedData.address && secExtracted.address) {
           extractedData.address = secExtracted.address;
+          if (!extractedData.pincode && secExtracted.pincode) extractedData.pincode = secExtracted.pincode;
+        }
+        if (!extractedData.pincode && secExtracted.pincode) {
           extractedData.pincode = secExtracted.pincode;
         }
-        if (
-          (!extractedData.consumerCare?.phone && !extractedData.consumerCare?.email && !extractedData.consumerCare?.raw) &&
-          (secExtracted.consumerCare?.phone || secExtracted.consumerCare?.email || secExtracted.consumerCare?.raw)
-        ) {
-          extractedData.consumerCare = secExtracted.consumerCare;
+
+        // 3. Consumer Care Redressal
+        if (!extractedData.consumerCare?.phone && secExtracted.consumerCare?.phone) {
+          extractedData.consumerCare.phone = secExtracted.consumerCare.phone;
         }
+        if (!extractedData.consumerCare?.email && secExtracted.consumerCare?.email) {
+          extractedData.consumerCare.email = secExtracted.consumerCare.email;
+        }
+        if (!extractedData.consumerCare?.raw && secExtracted.consumerCare?.raw) {
+          extractedData.consumerCare.raw = secExtracted.consumerCare.raw;
+        }
+
+        // 4. Dates
         if (!extractedData.manufacturingDate?.formatted && secExtracted.manufacturingDate?.formatted) {
           extractedData.manufacturingDate = secExtracted.manufacturingDate;
         }
         if (!extractedData.expiryDate?.expiryFormatted && (secExtracted.expiryDate?.expiryFormatted || secExtracted.expiryDate?.raw)) {
           extractedData.expiryDate = secExtracted.expiryDate;
         }
-        if (!extractedData.mrp?.value && secExtracted.mrp?.value) {
+
+        // 5. MRP
+        if ((!extractedData.mrp?.value || isNaN(Number(extractedData.mrp.value))) && secExtracted.mrp?.value) {
           extractedData.mrp = secExtracted.mrp;
+        } else if (!extractedData.mrp?.raw && secExtracted.mrp?.raw) {
+          extractedData.mrp.raw = secExtracted.mrp.raw;
         }
-        if (!extractedData.netQuantity?.value && secExtracted.netQuantity?.value) {
-          extractedData.netQuantity = secExtracted.netQuantity;
+        if (!extractedData.mrp?.hasInclusiveOfAllTaxes && secExtracted.mrp?.hasInclusiveOfAllTaxes) {
+          extractedData.mrp.hasInclusiveOfAllTaxes = true;
         }
 
-        // Merge bounding boxes tagged with this face
+        // 6. Net Quantity
+        if ((!extractedData.netQuantity?.value || isNaN(Number(extractedData.netQuantity.value))) && secExtracted.netQuantity?.value) {
+          extractedData.netQuantity = secExtracted.netQuantity;
+        } else if (!extractedData.netQuantity?.unit && secExtracted.netQuantity?.unit) {
+          extractedData.netQuantity.unit = secExtracted.netQuantity.unit;
+          extractedData.netQuantity.isStandardUnit = secExtracted.netQuantity.isStandardUnit;
+        }
+
+        // 7. Country of origin
+        if ((!extractedData.countryOfOrigin || extractedData.countryOfOrigin.toLowerCase() === 'imported') && secExtracted.countryOfOrigin && secExtracted.countryOfOrigin.toLowerCase() !== 'imported') {
+          extractedData.countryOfOrigin = secExtracted.countryOfOrigin;
+          extractedData.isImported = secExtracted.isImported;
+        }
+
+        // 8. Field Confidences
+        Object.keys(secExtracted.fieldConfidences || {}).forEach((k) => {
+          extractedData.fieldConfidences[k] = Math.max(
+            extractedData.fieldConfidences[k] || 0,
+            secExtracted.fieldConfidences[k] || 0
+          );
+        });
+
+        // 9. Bounding Boxes
         Object.keys(secExtracted.boundingBoxes || {}).forEach((k) => {
-          if (!extractedData.boundingBoxes[k]) {
-            extractedData.boundingBoxes[k] = {
-              ...secExtracted.boundingBoxes[k],
-              face: secFace.face.toLowerCase(),
-            };
+          const sBox = secExtracted.boundingBoxes[k];
+          const curBox = extractedData.boundingBoxes[k];
+          const isHigherConfidence = (secExtracted.fieldConfidences?.[k] || 0) > (extractedData.fieldConfidences?.[k] || 0);
+          if (!curBox || (curBox.width === 0 && curBox.height === 0) || isHigherConfidence) {
+            if (sBox && (sBox.width > 0 || sBox.height > 0)) {
+              extractedData.boundingBoxes[k] = {
+                ...sBox,
+                face: secFace.face.toLowerCase(),
+              };
+            }
           }
         });
 
@@ -246,12 +305,12 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Legal Metrology Rule Engine
-    const finalProductName = productName || extractedData.productName || 'Scanned Packaged Commodity';
+    const finalProductName = productName || extractedData.productName || extractedData.commodityName || (extractedData.brand ? `${extractedData.brand} Commodity` : 'Packaged Commodity');
     const complianceResult = evaluateCompliance(extractedData, {
       productName: finalProductName,
       category,
-      isImported,
-      countryOfOrigin,
+      isImported: extractedData.isImported,
+      countryOfOrigin: extractedData.countryOfOrigin || countryOfOrigin,
     });
 
     // 4. Save analysis record in database

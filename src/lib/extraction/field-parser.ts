@@ -132,7 +132,7 @@ function parseMrp(text: string): MrpDeclaration {
     value = parseFloat(numStr);
   } else {
     // Fallback: search for stand-alone currency values near price keywords
-    const fallback = /(?:rs\.?|inr|₹)\s*([0-9,]+(?:\.[0-9]{1,2})?)/i.exec(text);
+    const fallback = /(?:m\.?r\.?p\.?[\s\S]{1,20}?)?(?:rs\.?|inr|₹)\s*([0-9,]+(?:\.[0-9]{1,2})?)/i.exec(text);
     if (fallback) {
       raw = fallback[0];
       value = parseFloat(fallback[1].replace(/,/g, ''));
@@ -146,14 +146,14 @@ function parseMrp(text: string): MrpDeclaration {
   return {
     value: isNaN(value as number) ? null : value,
     currency: value ? 'INR' : null,
-    raw: raw ? `${raw}${hasInclusiveOfAllTaxes ? ' (Incl. of all taxes)' : ''}` : null,
+    raw: raw ? `${raw}${hasInclusiveOfAllTaxes && !taxRegex.test(raw) ? ' (Incl. of all taxes)' : ''}` : null,
     hasInclusiveOfAllTaxes,
   };
 }
 
 function parseNetQuantity(text: string): NetQuantityDeclaration {
   // Regex for Net Quantity with standard or non-standard metric symbols
-  const netQtyRegex = /(?:net\s*(?:qty|quantity|wt|weight)|quantity|net\s*content)[\s:.]*([0-9]+(?:\.[0-9]+)?)\s*(mg|g|kg|ml|l|ltr|gms?|kgs?|gm|units?|n|u)\b/i;
+  const netQtyRegex = /(?:net\s*(?:wt\.?|weight|qty|quantity)|net\s*content)[\s:.-]*([0-9]+(?:\.[0-9]+)?)\s*(mg|g|kg|ml|l|ltr|gms?|kgs?|gm|units?|n|u)\b/i;
   const match = text.match(netQtyRegex);
 
   if (match) {
@@ -169,7 +169,7 @@ function parseNetQuantity(text: string): NetQuantityDeclaration {
     };
   }
 
-  // Fallback: look for standalone measurement string like "500 ml" or "200 g"
+  // Fallback: look for standalone measurement string like "100g | 3.53oz" or "500 ml" or "200 g"
   const standalone = /\b([0-9]+(?:\.[0-9]+)?)\s*(mg|g|kg|ml|l|ltr|gms?|kgs?|gm)\b/i.exec(text);
   if (standalone) {
     const rawVal = parseFloat(standalone[1]);
@@ -289,18 +289,24 @@ function parseManufacturerAndAddress(text: string, lines: string[]) {
     pincode = pinMatch[1];
   }
 
-  // Look for "Manufactured by", "Mfd by", "Packed by"
-  const mfdLine = lines.find((l) => /^(?:mfd|manufactured|packed|pkd|marketed)\s*by/i.test(l));
+  // Look for "Manufactured & Marketed by", "Manufactured by", "Mfd by", "Packed by" anywhere
+  const mfdLine = lines.find((l) => /(?:mfd|manufactured|packed|pkd|marketed)\s*(?:&|and)?\s*(?:marketed|packed)?\s*by/i.test(l));
   if (mfdLine) {
-    manufacturer = mfdLine.replace(/^(?:mfd|manufactured|packed|pkd|marketed)\s*by[\s:.-]*/i, '').trim();
+    manufacturer = mfdLine.replace(/.*?(?:mfd|manufactured|packed|pkd|marketed)\s*(?:&|and)?\s*(?:marketed|packed)?\s*by[\s:.-]*/i, '').trim();
     address = mfdLine;
   } else {
     // Search within text for corporate entities
-    const corpMatch = text.match(/(?:(?:mfd|manufactured|packed|pkd)\s*by[\s:.]*)?([a-zA-Z0-9\s.,&-]+(?:pvt\.?\s*ltd\.?|limited|foods|products|industries|llp)[^,\n]*(?:,[^\n]+){0,2})/i);
+    const corpMatch = text.match(/(?:(?:mfd|manufactured|packed|pkd|marketed)\s*(?:&|and)?\s*(?:marketed|packed)?\s*by[\s:.]*)?([a-zA-Z0-9\s.,&-]+(?:pvt\.?\s*ltd\.?|private\s*limited|limited|foods|products|industries|llp)[^,\n]*(?:,[^\n]+){0,2})/i);
     if (corpMatch) {
       manufacturer = corpMatch[1].trim();
       address = corpMatch[0].trim();
     }
+  }
+
+  // If address has pincode, ensure manufacturer is clean
+  if (manufacturer && manufacturer.length > 80) {
+    const parts = manufacturer.split(/[,;\n]/);
+    manufacturer = parts[0].trim();
   }
 
   return { manufacturer, packer, address, pincode };
@@ -330,9 +336,13 @@ function parseConsumerCare(text: string): ConsumerCareDeclaration {
 }
 
 function parseCountryOfOrigin(text: string): string | null {
-  const originMatch = text.match(/(?:country\s*of\s*origin|made\s*in|manufactured\s*in|imported\s*from)[\s:.]*([a-zA-Z\s]{3,20})/i);
+  const originMatch = text.match(/(?:country\s*of\s*origin|made\s*in|manufactured\s*in|imported\s*from|product\s*of)[\s:.]*([a-zA-Z\s]{3,20})/i);
   if (originMatch) {
     return originMatch[1].trim();
+  }
+  // Check if text has India / Indian states
+  if (/(?:india|bharat|haryana|delhi|maharashtra|gujarat|karnataka|tamil\s*nadu|punjab|rajasthan|kerala)\b/i.test(text)) {
+    return 'India';
   }
   return null;
 }
@@ -344,9 +354,14 @@ function parseCommodityName(text: string, lines: string[], contextName?: string)
   if (commodityLine) {
     return commodityLine.replace(/^(?:product|commodity|generic\s*name)[\s:.]*/i, '').trim();
   }
+  // Look for known commodities or title line
+  for (const line of lines) {
+    if (line.length >= 3 && line.length <= 60 && !/(?:mrp|fssai|lic|mfd|pkd|batch|net\s*wt|steps|care)/i.test(line)) {
+      return line.trim();
+    }
+  }
   return lines[0] || null;
 }
-
 function extractBrand(lines: string[]): string | null {
   if (lines.length > 0 && lines[0].length < 30) {
     return lines[0];

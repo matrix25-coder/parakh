@@ -3,28 +3,40 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { PageHeader, StatusBadge, SeverityBadge, ComplianceVerdict, FontAuditCard } from '@/components/ui';
-import { DEMO_REPORT, DEMO_FONT_AUDITS } from '@/lib/demo/fixtures';
-import type { ComplianceReport, FontReadabilityAudit } from '@/lib/types';
+import {
+  PageHeader,
+  StatusBadge,
+  SeverityBadge,
+  ComplianceVerdict,
+  FontAuditCard,
+  PackageOverlayViewer,
+} from '@/components/ui';
+import type { ComplianceReport, FontReadabilityAudit, RuleEvaluationDetail } from '@/lib/types';
 
 export default function ComplianceResultsPage() {
   const params = useParams();
   const id = (params?.id as string) || '1';
 
   const [isLoading, setIsLoading] = useState(true);
-  const [report, setReport] = useState<ComplianceReport>(DEMO_REPORT);
-  const [fontAudits, setFontAudits] = useState<FontReadabilityAudit[]>(DEMO_FONT_AUDITS);
+  const [report, setReport] = useState<ComplianceReport | null>(null);
+  const [scanData, setScanData] = useState<any>(null);
+  const [fontAudits, setFontAudits] = useState<FontReadabilityAudit[]>([]);
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   const [expandedRuleCode, setExpandedRuleCode] = useState<string | null>(null);
+  const [selectedField, setSelectedField] = useState<string | null>(null);
+  const [showVisualEvidence, setShowVisualEvidence] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
     setIsLoading(true);
+    setFetchError(null);
     fetch(`/api/scan/${id}`)
       .then((res) => {
-        if (!res.ok) throw new Error('Scan not found');
+        if (!res.ok) throw new Error('Scan not found or failed to load');
         return res.json();
       })
       .then((data) => {
+        setScanData(data);
         if (data.complianceResult) {
           setReport(data.complianceResult);
           if (data.complianceResult.font_audits) {
@@ -34,25 +46,89 @@ export default function ComplianceResultsPage() {
           const firstFail = data.complianceResult.results?.find((r: any) => r.status === 'FAIL');
           if (firstFail) {
             setExpandedRuleCode(firstFail.rule_code);
+            setSelectedField(firstFail.field);
+          } else if (data.complianceResult.results?.[0]) {
+            setExpandedRuleCode(data.complianceResult.results[0].rule_code);
+            setSelectedField(data.complianceResult.results[0].field);
           }
         }
       })
       .catch((err) => {
-        console.warn('Could not fetch scan report, using defaults:', err);
+        console.warn('Could not fetch scan report:', err);
+        setFetchError(err.message || 'Could not load scan record');
       })
       .finally(() => {
         setIsLoading(false);
       });
   }, [id]);
 
+  const handleSelectField = (fieldName: string, ruleCode?: string) => {
+    setSelectedField(fieldName);
+    if (ruleCode) {
+      setExpandedRuleCode(ruleCode);
+    } else if (report?.results) {
+      const match = report.results.find((r) => r.field === fieldName);
+      if (match) {
+        setExpandedRuleCode(match.rule_code);
+      }
+    }
+  };
+
+  const handleRuleClick = (rule: RuleEvaluationDetail) => {
+    if (expandedRuleCode === rule.rule_code) {
+      setExpandedRuleCode(null);
+    } else {
+      setExpandedRuleCode(rule.rule_code);
+      setSelectedField(rule.field);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6 max-w-6xl mx-auto py-8">
+        <div className="border border-[#CBD5E1] bg-white p-8 text-center space-y-4 shadow-xs">
+          <div className="inline-block w-8 h-8 border-3 border-[#0A2540] border-t-transparent rounded-full animate-spin" />
+          <div className="space-y-1">
+            <h2 className="text-base font-bold text-[#0A2540] font-mono">
+              COMPUTING STATUTORY DETERMINATIONS
+            </h2>
+            <p className="text-xs text-[#64748B] font-mono">
+              Evaluating 10 statutory rules of Legal Metrology Act, 2009 against optical declarations...
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (fetchError || !report) {
+    return (
+      <div className="space-y-6 max-w-6xl mx-auto py-8">
+        <div className="border border-red-300 bg-red-50 p-8 text-center space-y-4">
+          <span className="text-2xl">⚠️</span>
+          <h2 className="text-base font-bold text-red-900 font-mono">
+            SCAN RECORD NOT AVAILABLE
+          </h2>
+          <p className="text-xs text-red-700 font-mono">
+            {fetchError || 'Unable to retrieve data for this scan.'}
+          </p>
+          <div className="pt-2">
+            <Link
+              href="/scan"
+              className="px-4 py-2 text-xs font-mono font-bold bg-[#0A2540] text-white hover:bg-[#1E3A8A] transition-colors"
+            >
+              Start New Package Scan &rarr;
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const filteredResults = report.results?.filter((r) => {
     if (filterStatus === 'ALL') return true;
     return r.status === filterStatus;
   }) || [];
-
-  const toggleExpand = (code: string) => {
-    setExpandedRuleCode((prev) => (prev === code ? null : code));
-  };
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto py-2">
@@ -67,12 +143,18 @@ export default function ComplianceResultsPage() {
             >
               View Violations ({report.violations?.length || 0})
             </Link>
-            <Link
-              href={`/scan/${id}/evidence`}
-              className="px-3.5 py-2 text-xs font-mono font-bold text-[#0A2540] bg-white hover:bg-[#F8FAFC] border border-[#CBD5E1] transition-colors"
+            <button
+              type="button"
+              onClick={() => setShowVisualEvidence((prev) => !prev)}
+              className={`px-3.5 py-2 text-xs font-mono font-bold border transition-colors cursor-pointer flex items-center gap-1.5 ${
+                showVisualEvidence
+                  ? 'bg-[#0A2540] text-white border-[#0A2540] shadow-xs'
+                  : 'text-[#0A2540] bg-white hover:bg-[#F8FAFC] border-[#CBD5E1]'
+              }`}
             >
-              Visual Evidence Viewer
-            </Link>
+              <span>Visual Evidence Canvas</span>
+              <span>{showVisualEvidence ? '▲' : '▼'}</span>
+            </button>
             <Link
               href={`/scan/${id}/report`}
               className="px-4 py-2 text-xs font-mono font-bold text-white bg-[#0A2540] hover:bg-[#1E3A8A] transition-colors border-t-2 border-t-[#EA580C] shadow-xs"
@@ -90,6 +172,50 @@ export default function ComplianceResultsPage() {
         productName={report.product_name}
         category={report.category}
       />
+
+      {/* ── VISUAL EVIDENCE TOGGLE BAR (Hidden by default, shown on click) ── */}
+      <div
+        id="visual-evidence-section"
+        className="p-3 bg-white border border-[#CBD5E1] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs"
+      >
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 bg-[#0A2540]"></span>
+          <span className="font-mono text-xs font-bold uppercase text-[#0A2540]">
+            Optical Packaging Evidence Canvas
+          </span>
+          <span className="text-[11px] font-mono text-[#64748B] hidden md:inline">
+            &bull; {showVisualEvidence ? 'Bounding-box overlays active on packaging photo' : 'Click to inspect bounding-box overlays on package photo'}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowVisualEvidence((prev) => !prev)}
+            className="px-3.5 py-1.5 font-mono text-xs font-bold text-[#0A2540] bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#CBD5E1] cursor-pointer flex items-center gap-1.5 transition-colors"
+          >
+            <span>{showVisualEvidence ? '▲ Hide Evidence Canvas' : '👁️ View Visual Evidence Canvas'}</span>
+          </button>
+          <Link
+            href={`/scan/${id}/evidence`}
+            className="px-3 py-1.5 font-mono text-xs font-bold text-[#64748B] hover:text-[#0A2540] bg-white border border-[#CBD5E1] transition-colors"
+          >
+            Split Workspace &rarr;
+          </Link>
+        </div>
+      </div>
+
+      {showVisualEvidence && (
+        <PackageOverlayViewer
+          imagePath={scanData?.image_path}
+          packageFaces={scanData?.images || scanData?.package_faces || []}
+          boundingBoxes={scanData?.extractedData?.boundingBoxes || {}}
+          rules={report.results || []}
+          selectedField={selectedField}
+          onSelectField={handleSelectField}
+          productName={report.product_name}
+          category={report.category}
+        />
+      )}
 
       {/* Traceability Callout */}
       <div className="p-3 bg-white text-[#0F172A] border border-[#CBD5E1] border-l-4 border-l-[#0A2540] flex flex-col sm:flex-row sm:items-center justify-between font-mono text-xs gap-2">
@@ -123,6 +249,7 @@ export default function ComplianceResultsPage() {
       <div className="bg-white border border-[#CBD5E1] divide-y divide-[#E2E8F0] shadow-xs">
         {filteredResults.map((rule) => {
           const isExpanded = expandedRuleCode === rule.rule_code;
+          const isFieldSelected = selectedField === rule.field;
           const isFail = rule.status === 'FAIL';
           const isReview = rule.status === 'REVIEW';
 
@@ -130,10 +257,18 @@ export default function ComplianceResultsPage() {
             <div key={rule.rule_code} className="flex flex-col bg-white">
               {/* Row Summary */}
               <div
-                onClick={() => toggleExpand(rule.rule_code)}
+                onClick={() => handleRuleClick(rule)}
                 className={`p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 cursor-pointer transition-colors ${
-                  isExpanded ? 'bg-[#F8FAFC]' : 'hover:bg-[#F8FAFC]'
-                } ${isFail ? 'border-l-4 border-l-[#B91C1C]' : isReview ? 'border-l-4 border-l-[#D97706]' : ''}`}
+                  isExpanded || isFieldSelected ? 'bg-[#F8FAFC]' : 'hover:bg-[#F8FAFC]'
+                } ${
+                  isFieldSelected
+                    ? 'ring-2 ring-inset ring-[#0A2540]'
+                    : isFail
+                    ? 'border-l-4 border-l-[#B91C1C]'
+                    : isReview
+                    ? 'border-l-4 border-l-[#D97706]'
+                    : ''
+                }`}
               >
                 <div className="flex items-start md:items-center gap-3">
                   <span className="font-mono text-xs font-bold text-[#0A2540] w-20 shrink-0">
@@ -152,7 +287,7 @@ export default function ComplianceResultsPage() {
                 <div className="flex items-center gap-4 shrink-0 self-end md:self-auto">
                   <div className="text-right hidden sm:block font-mono text-[11px]">
                     <span className="text-[#64748B] block">Extracted Input:</span>
-                    <span className="font-semibold text-[#0F172A] max-w-[150px] truncate block">
+                    <span className="font-semibold text-[#0F172A] max-w-[180px] truncate block">
                       {rule.extracted_value || 'Missing'}
                     </span>
                   </div>
@@ -217,22 +352,24 @@ export default function ComplianceResultsPage() {
                       <div className="p-3 bg-white border border-[#CBD5E1] flex items-center justify-between">
                         <div>
                           <span className="text-[10px] text-[#64748B] uppercase block font-bold">
-                            Visual Evidence Bounding Box:
+                            Visual Evidence Coordinate:
                           </span>
-                          <span className="text-[#0F172A] font-mono text-[11px]">
-                            {rule.evidence?.bounding_box
-                              ? Array.isArray(rule.evidence.bounding_box)
-                                ? `Box: [${rule.evidence.bounding_box.join(', ')}]`
-                                : JSON.stringify(rule.evidence.bounding_box)
-                              : 'No visual declaration found'}
+                          <span className="text-[#0A2540] font-mono text-[11px] font-bold">
+                            Field [{rule.field}] highlighted on Package Canvas above
                           </span>
                         </div>
-                        <Link
-                          href={`/scan/${id}/evidence`}
-                          className="px-3 py-1 text-xs font-bold text-[#0A2540] bg-[#F1F5F9] hover:bg-[#E2E8F0] border border-[#CBD5E1] transition-colors"
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowVisualEvidence(true);
+                            setSelectedField(rule.field);
+                            const elem = document.getElementById('visual-evidence-section');
+                            if (elem) elem.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                          }}
+                          className="px-3 py-1 text-xs font-bold text-[#0A2540] bg-[#F1F5F9] hover:bg-[#E2E8F0] border border-[#CBD5E1] transition-colors cursor-pointer"
                         >
-                          View Canvas &rarr;
-                        </Link>
+                          Show on Canvas &uarr;
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -244,7 +381,7 @@ export default function ComplianceResultsPage() {
       </div>
 
       {/* Font & Readability Analysis */}
-      <FontAuditCard audits={fontAudits} />
+      {fontAudits.length > 0 && <FontAuditCard audits={fontAudits} />}
     </div>
   );
 }

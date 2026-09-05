@@ -3,9 +3,13 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { PageHeader, ConfidenceBadge, FontAuditCard } from '@/components/ui';
-import { DEMO_FONT_AUDITS } from '@/lib/demo/fixtures';
-import type { FontReadabilityAudit } from '@/lib/types';
+import {
+  PageHeader,
+  ConfidenceBadge,
+  FontAuditCard,
+  PackageOverlayViewer,
+} from '@/components/ui';
+import type { FontReadabilityAudit, RuleEvaluationDetail } from '@/lib/types';
 
 interface FieldRow {
   field_name: string;
@@ -25,8 +29,10 @@ export default function ExtractionReviewPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [productName, setProductName] = useState('Packaged Commodity');
   const [category, setCategory] = useState('FOOD');
-  const [fontAudits, setFontAudits] = useState<FontReadabilityAudit[]>(DEMO_FONT_AUDITS);
+  const [fontAudits, setFontAudits] = useState<FontReadabilityAudit[]>([]);
   const [fields, setFields] = useState<FieldRow[]>([]);
+  const [scanData, setScanData] = useState<any>(null);
+  const [selectedField, setSelectedField] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -38,6 +44,7 @@ export default function ExtractionReviewPage() {
         return res.json();
       })
       .then((data) => {
+        setScanData(data);
         setProductName(data.product_name || 'Packaged Commodity');
         setCategory(data.category || 'FOOD');
 
@@ -61,15 +68,6 @@ export default function ExtractionReviewPage() {
 
         const rows: FieldRow[] = [
           {
-            field_name: 'manufacturer_name',
-            label: 'Manufacturer / Packer Name & Address',
-            rule_ref: 'Rule 6(1)(a)',
-            value: mfgVal,
-            confidence: conf.manufacturer_name ?? (mfgVal ? 0.95 : 0.0),
-            source_image: 'front_label.jpg',
-            status: !mfgVal ? 'MISSING' : (conf.manufacturer_name && conf.manufacturer_name < 0.9 ? 'REVIEW_REQUIRED' : 'CONFIRMED'),
-          },
-          {
             field_name: 'commodity_description',
             label: 'Generic or Common Name of Commodity',
             rule_ref: 'Rule 6(1)(b)',
@@ -77,6 +75,15 @@ export default function ExtractionReviewPage() {
             confidence: conf.commodity_description ?? (commVal ? 0.95 : 0.0),
             source_image: 'front_label.jpg',
             status: !commVal ? 'MISSING' : 'CONFIRMED',
+          },
+          {
+            field_name: 'manufacturer_name',
+            label: 'Manufacturer / Packer Name & Address',
+            rule_ref: 'Rule 6(1)(a)',
+            value: mfgVal,
+            confidence: conf.manufacturer_name ?? (mfgVal ? 0.95 : 0.0),
+            source_image: 'front_label.jpg',
+            status: !mfgVal ? 'MISSING' : (conf.manufacturer_name && conf.manufacturer_name < 0.9 ? 'REVIEW_REQUIRED' : 'CONFIRMED'),
           },
           {
             field_name: 'net_quantity',
@@ -115,15 +122,6 @@ export default function ExtractionReviewPage() {
             status: !dateVal ? 'MISSING' : 'CONFIRMED',
           },
           {
-            field_name: 'country_of_origin',
-            label: 'Country of Origin (Imported)',
-            rule_ref: 'Rule 6(1)(da)',
-            value: originVal,
-            confidence: conf.country_of_origin ?? 0.99,
-            source_image: 'front_label.jpg',
-            status: 'CONFIRMED',
-          },
-          {
             field_name: 'consumer_care',
             label: 'Consumer Care / Grievance Redressal Contact',
             rule_ref: 'Rule 6(1)(f)',
@@ -132,12 +130,24 @@ export default function ExtractionReviewPage() {
             source_image: 'back_label.jpg',
             status: !ccVal ? 'MISSING' : ((conf.consumer_care && conf.consumer_care < 0.9) ? 'REVIEW_REQUIRED' : 'CONFIRMED'),
           },
+          {
+            field_name: 'country_of_origin',
+            label: 'Country of Origin (Imported)',
+            rule_ref: 'Rule 6(1)(da)',
+            value: originVal,
+            confidence: conf.country_of_origin ?? 0.99,
+            source_image: 'front_label.jpg',
+            status: 'CONFIRMED',
+          },
         ];
 
         setFields(rows);
+        if (rows[0]) {
+          setSelectedField(rows[0].field_name);
+        }
       })
       .catch((err) => {
-        console.warn('Could not load scan data, using fallback defaults:', err);
+        console.warn('Could not load scan data:', err);
       })
       .finally(() => {
         setIsLoading(false);
@@ -183,6 +193,19 @@ export default function ExtractionReviewPage() {
       setIsSubmitting(false);
     }
   };
+
+  const syntheticRules: RuleEvaluationDetail[] = fields.map((f, i) => ({
+    rule_code: `RULE-0${i + 1}`,
+    rule_number: '6',
+    title: f.label,
+    field: f.field_name,
+    status: f.value ? 'PASS' : 'FAIL',
+    severity: f.value ? 'LOW' : 'HIGH',
+    message: f.value ? `Detected: ${f.value}` : 'Missing declaration',
+    extracted_value: f.value || undefined,
+    expected_value: 'Mandatory statutory declaration',
+    source_reference: f.rule_ref,
+  }));
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto py-2">
@@ -237,111 +260,132 @@ export default function ExtractionReviewPage() {
         </span>
       </div>
 
-      {/* Main Review Grid */}
-      <div className="bg-white border border-[#CBD5E1] p-6 space-y-6 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#E2E8F0] pb-3 gap-2">
-          <div>
-            <span className="text-[10px] font-mono text-[#64748B] uppercase block">
-              Inspection Subject SCN-{id.slice(0, 8).toUpperCase()}
-            </span>
-            <h2 className="text-base font-bold text-[#0A2540] font-sans">
-              {productName} &bull; <span className="font-mono text-xs text-[#64748B]">{category}</span>
-            </h2>
-          </div>
-          <div className="flex items-center gap-3 font-mono text-xs">
-            <span className="text-[#64748B]">Panels Inspected:</span>
-            <span className="font-bold text-[#0F172A]">Primary Display Panel (PDP)</span>
-          </div>
+      {/* VISUAL EVIDENCE OVERLAY & EDITABLE TABLE */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Left 45%: Package Image with Bounding Boxes */}
+        <div className="lg:col-span-5 sticky top-4">
+          <PackageOverlayViewer
+            imagePath={scanData?.image_path}
+            packageFaces={scanData?.images || scanData?.package_faces || []}
+            boundingBoxes={scanData?.extractedData?.boundingBoxes || {}}
+            rules={scanData?.complianceResult?.results || syntheticRules}
+            selectedField={selectedField}
+            onSelectField={(fieldName) => setSelectedField(fieldName)}
+            productName={productName}
+            category={category}
+            compact={true}
+          />
         </div>
 
-        {/* Declarations Table */}
-        <div className="border border-[#CBD5E1] overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-[#F1F5F9] border-b border-[#CBD5E1] font-mono text-[#0A2540] uppercase text-[10px]">
-                <th className="p-3 border-r border-[#CBD5E1] font-bold">Statutory Declaration Field</th>
-                <th className="p-3 border-r border-[#CBD5E1] font-bold">Legal Section</th>
-                <th className="p-3 border-r border-[#CBD5E1] font-bold">Extracted Value (Editable)</th>
-                <th className="p-3 border-r border-[#CBD5E1] font-bold">OCR Confidence</th>
-                <th className="p-3 border-r border-[#CBD5E1] font-bold">Panel</th>
-                <th className="p-3 text-right font-bold">Verification</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#E2E8F0] font-mono text-[11px] bg-white">
-              {fields.map((f, idx) => {
-                const isReview = f.confidence > 0 && f.confidence < 0.9;
-                const isMissing = !f.value.trim();
+        {/* Right 55%: Main Review Table */}
+        <div className="lg:col-span-7 bg-white border border-[#CBD5E1] p-5 space-y-4 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#E2E8F0] pb-3 gap-2">
+            <div>
+              <span className="text-[10px] font-mono text-[#64748B] uppercase block">
+                Inspection Subject SCN-{id.slice(0, 8).toUpperCase()}
+              </span>
+              <h2 className="text-base font-bold text-[#0A2540] font-sans">
+                {productName} &bull; <span className="font-mono text-xs text-[#64748B]">{category}</span>
+              </h2>
+            </div>
+            <div className="flex items-center gap-2 font-mono text-xs">
+              <span className="text-[#64748B]">Panels:</span>
+              <span className="font-bold text-[#0F172A]">PDP & Information Panel</span>
+            </div>
+          </div>
 
-                return (
-                  <tr
-                    key={f.field_name}
-                    className={`hover:bg-[#F8FAFC] transition-colors ${
-                      isMissing
-                        ? 'bg-[#FEF2F2]'
-                        : isReview
-                        ? 'bg-[#FFFBEB]'
-                        : undefined
-                    }`}
-                  >
-                    <td className="p-3 font-bold font-sans text-[#0F172A] border-r border-[#CBD5E1]">
-                      {f.label}
-                    </td>
-                    <td className="p-3 text-[#64748B] border-r border-[#CBD5E1]">
-                      {f.rule_ref}
-                    </td>
-                    <td className="p-2 border-r border-[#CBD5E1]">
-                      <input
-                        type="text"
-                        value={f.value}
-                        onChange={(e) => handleFieldChange(idx, e.target.value)}
-                        placeholder="[Declaration Missing on Package]"
-                        className={`w-full px-2.5 py-1.5 font-mono text-xs border focus:outline-none transition-colors ${
-                          isMissing
-                            ? 'bg-white border-[#B91C1C] text-[#B91C1C] placeholder-[#B91C1C]/50'
-                            : isReview
-                            ? 'bg-white border-[#D97706] text-[#0F172A]'
-                            : 'bg-white border-[#CBD5E1] text-[#0F172A] focus:border-[#0A2540]'
-                        }`}
-                      />
-                    </td>
-                    <td className="p-3 border-r border-[#CBD5E1]">
-                      {isMissing ? (
-                        <span className="text-[#B91C1C] font-bold">0.00</span>
-                      ) : (
-                        <ConfidenceBadge confidence={f.confidence} />
-                      )}
-                    </td>
-                    <td className="p-3 text-[#64748B] border-r border-[#CBD5E1]">
-                      {f.source_image}
-                    </td>
-                    <td className="p-3 text-right font-sans font-semibold">
-                      {isMissing ? (
-                        <span className="px-2 py-0.5 text-[10px] font-mono text-[#B91C1C] bg-[#FEF2F2] border border-[#FECACA]">
-                          MISSING
+          {/* Declarations Table */}
+          <div className="border border-[#CBD5E1] overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-[#F1F5F9] border-b border-[#CBD5E1] font-mono text-[#0A2540] uppercase text-[10px]">
+                  <th className="p-2.5 border-r border-[#CBD5E1] font-bold">Field</th>
+                  <th className="p-2.5 border-r border-[#CBD5E1] font-bold">Extracted Value (Editable)</th>
+                  <th className="p-2.5 border-r border-[#CBD5E1] font-bold">Conf.</th>
+                  <th className="p-2.5 text-right font-bold">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E2E8F0] font-mono text-[11px] bg-white">
+                {fields.map((f, idx) => {
+                  const isReview = f.confidence > 0 && f.confidence < 0.9;
+                  const isMissing = !f.value.trim();
+                  const isSelected = selectedField === f.field_name;
+
+                  return (
+                    <tr
+                      key={f.field_name}
+                      onClick={() => setSelectedField(f.field_name)}
+                      className={`cursor-pointer transition-colors ${
+                        isSelected
+                          ? 'bg-[#F0FDF4] ring-2 ring-inset ring-[#0A2540]'
+                          : isMissing
+                          ? 'bg-[#FEF2F2]'
+                          : isReview
+                          ? 'bg-[#FFFBEB]'
+                          : 'hover:bg-[#F8FAFC]'
+                      }`}
+                    >
+                      <td className="p-2.5 font-bold font-sans text-[#0F172A] border-r border-[#CBD5E1]">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 bg-[#0A2540] rounded-full" />
+                          <span className="text-xs">{f.label}</span>
+                        </div>
+                        <span className="text-[10px] font-mono text-[#64748B] block mt-0.5">
+                          {f.rule_ref}
                         </span>
-                      ) : isReview ? (
-                        <span className="px-2 py-0.5 text-[10px] font-mono text-[#B45309] bg-[#FFFBEB] border border-[#FDE68A]">
-                          REVIEW REQUIRED
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 text-[10px] font-mono text-[#15803D] bg-[#F0FDF4] border border-[#BBF7D0]">
-                          CONFIRMED
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      </td>
+                      <td className="p-2 border-r border-[#CBD5E1]">
+                        <input
+                          type="text"
+                          value={f.value}
+                          onFocus={() => setSelectedField(f.field_name)}
+                          onChange={(e) => handleFieldChange(idx, e.target.value)}
+                          placeholder="[Declaration Missing on Package]"
+                          className={`w-full px-2.5 py-1.5 font-mono text-xs border focus:outline-none transition-colors ${
+                            isMissing
+                              ? 'bg-white border-[#B91C1C] text-[#B91C1C] placeholder-[#B91C1C]/50'
+                              : isReview
+                              ? 'bg-white border-[#D97706] text-[#0F172A]'
+                              : 'bg-white border-[#CBD5E1] text-[#0F172A] focus:border-[#0A2540]'
+                          }`}
+                        />
+                      </td>
+                      <td className="p-2.5 border-r border-[#CBD5E1] text-center">
+                        {isMissing ? (
+                          <span className="text-[#B91C1C] font-bold">0.00</span>
+                        ) : (
+                          <ConfidenceBadge confidence={f.confidence} />
+                        )}
+                      </td>
+                      <td className="p-2.5 text-right font-sans font-semibold">
+                        {isMissing ? (
+                          <span className="px-2 py-0.5 text-[10px] font-mono text-[#B91C1C] bg-[#FEF2F2] border border-[#FECACA]">
+                            MISSING
+                          </span>
+                        ) : isReview ? (
+                          <span className="px-2 py-0.5 text-[10px] font-mono text-[#B45309] bg-[#FFFBEB] border border-[#FDE68A]">
+                            REVIEW
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 text-[10px] font-mono text-[#15803D] bg-[#F0FDF4] border border-[#BBF7D0]">
+                            CONFIRMED
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
-      {/* FONT & READABILITY ANALYSIS (Rule 9 Table I) */}
-      <FontAuditCard audits={fontAudits} />
+      {/* FONT & READABILITY ANALYSIS */}
+      {fontAudits.length > 0 && <FontAuditCard audits={fontAudits} />}
 
       {/* Bottom Dispatch Action */}
-      <div className="p-4 bg-white border border-[#CBD5E1] flex flex-col sm:flex-row items-center justify-between gap-4 font-mono">
+      <div className="p-4 bg-white border border-[#CBD5E1] flex flex-col sm:flex-row items-center justify-between gap-4 font-mono shadow-xs">
         <p className="text-xs text-[#475569]">
           Click below to pass this verified structured dataset to the 10 statutory rules in the compliance engine.
         </p>

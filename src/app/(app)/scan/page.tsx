@@ -12,26 +12,88 @@ interface CapturedImage {
   name: string;
 }
 
-// Generate an authentic synthetic package SVG image as a data URI for instant testing
-function createPackageCanvasDataUrl(title: string, weight: string, price: string, statusText: string, color: string) {
+// Generate an authentic synthetic package image as a valid base64 data URI for instant testing
+function createPackageCanvasDataUrl(
+  title: string,
+  weight: string,
+  price: string,
+  statusText: string,
+  color: string,
+  mfgText: string = 'Mfd By: Amrit Dairy Products Pvt Ltd, Anand, Gujarat - 388001'
+) {
+  if (typeof document !== 'undefined') {
+    const canvas = document.createElement('canvas');
+    canvas.width = 800;
+    canvas.height = 500;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, 800, 500);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 6;
+      ctx.strokeRect(20, 20, 760, 460);
+
+      // Header band
+      ctx.fillStyle = '#0A2540';
+      ctx.fillRect(30, 30, 740, 60);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold 22px sans-serif';
+      ctx.fillText(title.toUpperCase(), 50, 70);
+
+      // Declarations
+      ctx.fillStyle = '#1E293B';
+      ctx.font = 'bold 18px sans-serif';
+      ctx.fillText(mfgText, 50, 135);
+
+      ctx.fillStyle = '#0A2540';
+      ctx.font = 'bold 24px monospace';
+      ctx.fillText(`NET QUANTITY: ${weight}`, 50, 195);
+
+      ctx.fillStyle = '#B45309';
+      ctx.font = 'bold 24px monospace';
+      ctx.fillText(`MAX. RETAIL PRICE: ${price}`, 50, 255);
+
+      ctx.fillStyle = '#475569';
+      ctx.font = '18px monospace';
+      ctx.fillText('PKD: 07/2026 • CONSUMER CARE: 1800-425-4449 | care@parakh.gov.in', 50, 315);
+
+      ctx.fillStyle = '#0F172A';
+      ctx.font = '16px monospace';
+      ctx.fillText('Country of Origin: India • FSSAI Lic. No. 10014022002890', 50, 365);
+
+      // Audit box
+      ctx.fillStyle = '#F8FAFC';
+      ctx.fillRect(30, 400, 740, 65);
+      ctx.strokeStyle = '#CBD5E1';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(30, 400, 740, 65);
+      ctx.fillStyle = color;
+      ctx.font = 'bold 16px monospace';
+      ctx.fillText(`STATUTORY COMPLIANCE: ${statusText}`, 50, 440);
+
+      return canvas.toDataURL('image/jpeg', 0.9);
+    }
+  }
+
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
     <rect width="600" height="400" fill="#FFFFFF"/>
     <rect x="20" y="20" width="560" height="360" fill="#F8FAFC" stroke="${color}" stroke-width="3"/>
     <rect x="40" y="40" width="520" height="50" fill="#0A2540"/>
     <text x="50" y="72" fill="#FFFFFF" font-family="sans-serif" font-size="20" font-weight="bold">${title.toUpperCase()}</text>
-    <text x="50" y="130" fill="#334155" font-family="sans-serif" font-size="16">Mfd By: Britannia Industries Ltd, Kolkata - 700017</text>
+    <text x="50" y="130" fill="#334155" font-family="sans-serif" font-size="16">${mfgText}</text>
     <text x="50" y="170" fill="#0A2540" font-family="monospace" font-size="22" font-weight="bold">NET QUANTITY: ${weight}</text>
     <text x="50" y="215" fill="#D97706" font-family="monospace" font-size="22" font-weight="bold">MAX. RETAIL PRICE: ${price}</text>
     <text x="50" y="260" fill="#475569" font-family="monospace" font-size="16">PKD: 07/2026 • CONSUMER CARE: 1800-425-4449</text>
     <rect x="40" y="300" width="520" height="60" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1"/>
     <text x="60" y="338" fill="${color}" font-family="monospace" font-size="14" font-weight="bold">STATUTORY AUDIT: ${statusText}</text>
   </svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
 }
 
 export default function ScanProductPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'camera' | 'upload'>('camera');
+  const [activeTab, setActiveTab] = useState<'camera' | 'upload' | 'manual'>('camera');
+  const [manualText, setManualText] = useState('');
 
   // Camera State
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -210,6 +272,50 @@ export default function ScanProductPage() {
     setImages((prev) => prev.map((img) => (img.id === id ? { ...img, face } : img)));
   };
 
+  const handleAttachManualText = () => {
+    if (!manualText.trim()) return;
+    if (typeof document !== 'undefined') {
+      const canvas = document.createElement('canvas');
+      canvas.width = 800;
+      canvas.height = 500;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, 800, 500);
+        ctx.strokeStyle = '#0A2540';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(15, 15, 770, 470);
+
+        ctx.fillStyle = '#0A2540';
+        ctx.fillRect(25, 25, 750, 45);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 18px monospace';
+        ctx.fillText(`PACKAGED COMMODITY LABEL • ${selectedFace} PANEL`, 40, 54);
+
+        ctx.fillStyle = '#0F172A';
+        ctx.font = 'bold 15px monospace';
+        const lines = manualText.split('\n');
+        let y = 105;
+        lines.forEach((l) => {
+          if (y < 460) {
+            ctx.fillText(l.trim(), 40, y);
+            y += 24;
+          }
+        });
+
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        const newImg: CapturedImage = {
+          id: `text-${Date.now()}`,
+          dataUrl,
+          face: selectedFace,
+          name: `LabelDeclaration_${selectedFace}.jpg`,
+        };
+        setImages((prev) => [...prev, newImg]);
+        setManualText('');
+      }
+    }
+  };
+
   const handleLoadPreset = (type: 'compliant' | 'violation' | 'imported') => {
     setScanError(null);
     if (type === 'compliant') {
@@ -220,13 +326,13 @@ export default function ScanProductPage() {
       setImages([
         {
           id: 'preset-front-1',
-          dataUrl: createPackageCanvasDataUrl('Amrit Pure Cow Ghee 500ml', '500 ml (452 g)', '₹385.00 (Incl. of all taxes)', 'PASS • FULL STATUTORY COMPLIANCE', '#15803D'),
+          dataUrl: createPackageCanvasDataUrl('Amrit Pure Cow Ghee 500ml', '500 ml (452 g)', '₹385.00 (Incl. of all taxes)', 'PASS • FULL STATUTORY COMPLIANCE', '#15803D', 'Mfd By: Amrit Dairy Products Pvt Ltd, Anand, Gujarat - 388001'),
           face: 'FRONT',
           name: 'Amrit_Ghee_Front_PDP.jpg',
         },
         {
           id: 'preset-back-1',
-          dataUrl: createPackageCanvasDataUrl('Amrit Pure Cow Ghee - Information Panel', '500 ml', 'Batch #AG-2026', 'BACK PANEL • MFD BY AMRIT FOODS PUNE • FSSAI 10014022002890', '#15803D'),
+          dataUrl: createPackageCanvasDataUrl('Amrit Pure Cow Ghee - Information Panel', '500 ml', '₹385.00 (Incl. of all taxes)', 'BACK PANEL • MFD BY AMRIT DAIRY GUJARAT • FSSAI 10014022002890', '#15803D', 'Mfd By: Amrit Dairy Products Pvt Ltd, Anand, Gujarat - 388001'),
           face: 'BACK',
           name: 'Amrit_Ghee_Back_Panel.jpg',
         },
@@ -239,13 +345,13 @@ export default function ScanProductPage() {
       setImages([
         {
           id: 'preset-front-2',
-          dataUrl: createPackageCanvasDataUrl('NutriBite Butter Crisp 120g', '120 gms', 'Rs. 35.00 only', 'FAIL • RULE 6(1)(e) & TABLE I DEFECTS', '#B91C1C'),
+          dataUrl: createPackageCanvasDataUrl('NutriBite Butter Crisp 120g', '120 gms', 'Rs. 35.00 only', 'FAIL • RULE 6(1)(e) & TABLE I DEFECTS', '#B91C1C', 'Mfd By: NutriBite Biscuits & Confectioneries Pvt Ltd, Industrial Area, Mumbai - 400001'),
           face: 'FRONT',
           name: 'NutriBite_Front_PDP.jpg',
         },
         {
           id: 'preset-back-2',
-          dataUrl: createPackageCanvasDataUrl('NutriBite Crisp - Back Panel', '120 gms', 'Rs. 35.00', 'BACK PANEL • MISSING PROPER UNIT & TAX INCLUSIVITY', '#B91C1C'),
+          dataUrl: createPackageCanvasDataUrl('NutriBite Crisp - Back Panel', '120 gms', 'Rs. 35.00', 'BACK PANEL • MISSING PROPER UNIT & TAX INCLUSIVITY', '#B91C1C', 'Mfd By: NutriBite Biscuits & Confectioneries Pvt Ltd, Industrial Area, Mumbai - 400001'),
           face: 'BACK',
           name: 'NutriBite_Back_Panel.jpg',
         },
@@ -258,13 +364,13 @@ export default function ScanProductPage() {
       setImages([
         {
           id: 'preset-front-3',
-          dataUrl: createPackageCanvasDataUrl('Alpine Glacial Water 750ml', '750 ml', '₹120.00 (Incl. taxes)', 'NEEDS_REVIEW • LOW CONTRAST OCR', '#B45309'),
+          dataUrl: createPackageCanvasDataUrl('Alpine Glacial Water 750ml', '750 ml', '₹120.00 (Incl. taxes)', 'NEEDS_REVIEW • IMPORTER & ORIGIN CHECK', '#B45309', 'Imported by: Himalayan Springs Importers Ltd, Barakhamba Road, New Delhi - 110001'),
           face: 'FRONT',
           name: 'Alpine_Water_Front_PDP.jpg',
         },
         {
           id: 'preset-back-3',
-          dataUrl: createPackageCanvasDataUrl('Alpine Glacial Water - Importer Panel', '750 ml', 'Imp: Himalayan Springs Ltd', 'BACK PANEL • IMPORTER & ORIGIN BHUTAN', '#B45309'),
+          dataUrl: createPackageCanvasDataUrl('Alpine Glacial Water - Importer Panel', '750 ml', '₹120.00 (Incl. taxes)', 'BACK PANEL • IMPORTER & ORIGIN BHUTAN', '#B45309', 'Imported by: Himalayan Springs Importers Ltd, Barakhamba Road, New Delhi - 110001'),
           face: 'BACK',
           name: 'Alpine_Water_Back_Panel.jpg',
         },
@@ -436,6 +542,26 @@ export default function ScanProductPage() {
               </svg>
               <span>UPLOAD IMAGE FILES</span>
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('manual');
+                stopCamera();
+              }}
+              className={`px-4 sm:px-6 py-3 font-bold border-b-2 transition-colors cursor-pointer flex items-center gap-2 ${
+                activeTab === 'manual'
+                  ? 'border-[#0A2540] text-[#0A2540] bg-white'
+                  : 'border-transparent text-[#64748B] hover:text-[#0F172A]'
+              }`}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+              </svg>
+              <span>DIRECT TEXT / LABEL INPUT</span>
+            </button>
           </div>
 
           {/* TAB 1: Live Camera Viewfinder */}
@@ -604,6 +730,67 @@ export default function ScanProductPage() {
                   className="hidden"
                 />
               </label>
+            </div>
+          )}
+
+          {/* TAB 3: Direct Text / Label Input */}
+          {activeTab === 'manual' && (
+            <div className="p-6 sm:p-8 flex-1 flex flex-col justify-between bg-white space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold font-mono text-[#0A2540] uppercase">
+                    Packaging Label Declaration Text
+                  </label>
+                  <span className="text-[11px] font-mono text-[#64748B]">
+                    Tag Panel: <strong>{selectedFace}</strong>
+                  </span>
+                </div>
+                <p className="text-xs text-[#475569]">
+                  Paste or type raw declaration text directly from the packaging label. The system will convert it into high-resolution statutory package data and run optical rule extraction.
+                </p>
+                <textarea
+                  rows={8}
+                  value={manualText}
+                  onChange={(e) => setManualText(e.target.value)}
+                  placeholder={`e.g.\nMfd By: Wellversed Health Private Limited, Gurugram, Haryana - 122008\nCommodity: Micronised Creatine Monohydrate\nNet Quantity: 100g\nMRP: ₹ 699.00 (Incl. of all taxes)\nPKD: 05/2026 • EXP: 04/2027\nCustomer Care: 1800-425-4449 | support@wellversed.in\nCountry of Origin: India`}
+                  className="w-full p-3 font-mono text-xs border border-[#CBD5E1] bg-[#F8FAFC] text-[#0F172A] focus:bg-white focus:outline-none focus:border-[#0A2540] leading-relaxed"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                <div className="flex items-center gap-2">
+                  <label className="text-[11px] font-mono text-[#64748B]">Target Face:</label>
+                  <select
+                    value={selectedFace}
+                    onChange={(e) => setSelectedFace(e.target.value as PackageFace)}
+                    className="text-xs font-mono border border-[#CBD5E1] px-2 py-1 bg-white text-[#0F172A]"
+                  >
+                    <option value="FRONT">FRONT (PDP)</option>
+                    <option value="BACK">BACK (DECLARATIONS)</option>
+                    <option value="SIDE">SIDE (BARCODE)</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setManualText(`Mfd & Marketed By: Wellversed Health Private Limited, 771, Udyog Vihar, Phase - V, Gurugram, Haryana - 122008 India\nCommodity: Micronised Creatine Monohydrate\nNet Quantity: 100g\nMRP: ₹ 699.00 (Incl. of all taxes)\nPKD: 05/2026 • EXP: 04/2027\nCustomer Care: 1800-425-4449 | support@wellversed.in\nCountry of Origin: India\nFSSAI Lic. No. 10820005000528`);
+                    }}
+                    className="px-3 py-1.5 text-xs font-mono text-[#0A2540] bg-[#F1F5F9] border border-[#CBD5E1] hover:bg-[#E2E8F0] cursor-pointer"
+                  >
+                    Load Sample Text
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAttachManualText}
+                    disabled={!manualText.trim()}
+                    className="px-5 py-1.5 bg-[#0A2540] text-white font-mono text-xs font-bold uppercase tracking-wider hover:bg-[#1E3A8A] transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    Attach as Package Panel ✓
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 

@@ -12,7 +12,7 @@ export default function ViolationsPage() {
   const id = (params?.id as string) || '1';
 
   const [isLoading, setIsLoading] = useState(true);
-  const [violations, setViolations] = useState<ViolationDetail[]>(DEMO_REPORT.violations);
+  const [violations, setViolations] = useState<ViolationDetail[]>([]);
 
   useEffect(() => {
     setIsLoading(true);
@@ -24,15 +24,35 @@ export default function ViolationsPage() {
       .then((data) => {
         if (data.complianceResult?.violations) {
           setViolations(data.complianceResult.violations);
+        } else {
+          setViolations([]);
         }
       })
       .catch((err) => {
-        console.warn('Could not fetch scan violations, using defaults:', err);
+        console.warn('Could not fetch scan violations:', err);
       })
       .finally(() => {
         setIsLoading(false);
       });
   }, [id]);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6 max-w-5xl mx-auto py-8">
+        <div className="border border-[#CBD5E1] bg-white p-8 text-center space-y-4 shadow-xs">
+          <div className="inline-block w-8 h-8 border-3 border-[#0A2540] border-t-transparent rounded-full animate-spin" />
+          <div className="space-y-1">
+            <h2 className="text-base font-bold text-[#0A2540] font-mono">
+              CHECKING STATUTORY INFRACTIONS
+            </h2>
+            <p className="text-xs text-[#64748B] font-mono">
+              Retrieving non-compliant declarations for notice drafting...
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto py-2">

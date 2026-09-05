@@ -7,3 +7,4 @@ export { default as PageHeader } from './page-header';
 export { default as MetricCard } from './metric-card';
 export { default as DataTable } from './data-table';
 export { default as FilterBar } from './filter-bar';
+export { PackageOverlayViewer } from './package-overlay-viewer';

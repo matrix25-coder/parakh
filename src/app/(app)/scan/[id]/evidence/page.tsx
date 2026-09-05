@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { PageHeader, StatusBadge, SeverityBadge, ConfidenceBadge } from '@/components/ui';
-import { DEMO_REPORT } from '@/lib/demo/fixtures';
 import type { RuleEvaluationDetail, ComplianceReport } from '@/lib/types';
 import type { BoundingBox } from '@/lib/extraction/types';
 
@@ -14,28 +13,65 @@ interface PackageImageItem {
   name?: string;
 }
 
+const STATUTORY_FIELD_CONFIG: Array<{
+  key: string;
+  label: string;
+  defaultBox: { top: number; left: number; width: number; height: number };
+}> = [
+  {
+    key: 'commodity_description',
+    label: 'commodity_description',
+    defaultBox: { top: 14, left: 10, width: 80, height: 10 },
+  },
+  {
+    key: 'consumer_care',
+    label: 'consumer_care',
+    defaultBox: { top: 40, left: 10, width: 80, height: 11 },
+  },
+  {
+    key: 'manufacturer_name',
+    label: 'manufacturer_name',
+    defaultBox: { top: 54, left: 10, width: 80, height: 12 },
+  },
+  {
+    key: 'month_year',
+    label: 'month_year',
+    defaultBox: { top: 69, left: 10, width: 44, height: 9 },
+  },
+  {
+    key: 'net_quantity',
+    label: 'net_quantity',
+    defaultBox: { top: 80, left: 10, width: 38, height: 9 },
+  },
+  {
+    key: 'mrp',
+    label: 'mrp',
+    defaultBox: { top: 80, left: 52, width: 38, height: 9 },
+  },
+  {
+    key: 'country_of_origin',
+    label: 'country_of_origin',
+    defaultBox: { top: 91, left: 10, width: 42, height: 7 },
+  },
+];
+
 export default function EvidenceViewerPage() {
   const params = useParams();
   const id = (params?.id as string) || '1';
 
   const [isLoading, setIsLoading] = useState(true);
-  const [report, setReport] = useState<ComplianceReport>(DEMO_REPORT);
+  const [report, setReport] = useState<ComplianceReport | null>(null);
   const [imagePath, setImagePath] = useState<string>('');
   const [packageImages, setPackageImages] = useState<PackageImageItem[]>([]);
   const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
-  const [selectedRule, setSelectedRule] = useState<RuleEvaluationDetail>(DEMO_REPORT.results[0]);
+  const [selectedRule, setSelectedRule] = useState<RuleEvaluationDetail | null>(null);
   const [activeFace, setActiveFace] = useState<string>('front');
-  const [boundingBoxes, setBoundingBoxes] = useState<Record<string, BoundingBox>>({
-    manufacturer_name: { top: 12, left: 10, width: 75, height: 14, face: 'front' },
-    commodity_description: { top: 30, left: 10, width: 60, height: 10, face: 'front' },
-    net_quantity: { top: 48, left: 10, width: 35, height: 10, face: 'front' },
-    mrp: { top: 48, left: 55, width: 35, height: 10, face: 'front' },
-    month_year: { top: 66, left: 10, width: 40, height: 10, face: 'front' },
-    consumer_care: { top: 66, left: 55, width: 40, height: 14, face: 'back' },
-  });
+  const [boundingBoxes, setBoundingBoxes] = useState<Record<string, BoundingBox>>({});
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
     setIsLoading(true);
+    setFetchError(null);
     fetch(`/api/scan/${id}`)
       .then((res) => {
         if (!res.ok) throw new Error('Scan not found');
@@ -46,7 +82,6 @@ export default function EvidenceViewerPage() {
           setImagePath(data.image_path);
         }
 
-        // Collect all submitted images/faces
         const loadedImages: PackageImageItem[] = [];
         if (data.images && Array.isArray(data.images) && data.images.length > 0) {
           loadedImages.push(...data.images);
@@ -84,16 +119,57 @@ export default function EvidenceViewerPage() {
           }
         }
         if (data.extractedData?.boundingBoxes && Object.keys(data.extractedData.boundingBoxes).length > 0) {
-          setBoundingBoxes((prev) => ({ ...prev, ...data.extractedData.boundingBoxes }));
+          setBoundingBoxes(data.extractedData.boundingBoxes);
         }
       })
       .catch((err) => {
         console.warn('Could not fetch scan evidence data:', err);
+        setFetchError(err.message || 'Failed to load evidence');
       })
       .finally(() => {
         setIsLoading(false);
       });
   }, [id]);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6 max-w-6xl mx-auto py-8">
+        <div className="border border-[#CBD5E1] bg-white p-8 text-center space-y-4 shadow-xs">
+          <div className="inline-block w-8 h-8 border-3 border-[#0A2540] border-t-transparent rounded-full animate-spin" />
+          <div className="space-y-1">
+            <h2 className="text-base font-bold text-[#0A2540] font-mono">
+              LOADING OPTICAL EVIDENCE & BOUNDING BOXES
+            </h2>
+            <p className="text-xs text-[#64748B] font-mono">
+              Aligning statutory determinations with physical package coordinates...
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (fetchError || !report || !selectedRule) {
+    return (
+      <div className="space-y-6 max-w-6xl mx-auto py-8">
+        <div className="border border-red-300 bg-red-50 p-8 text-center space-y-4">
+          <span className="text-2xl">⚠️</span>
+          <h2 className="text-base font-bold text-red-900 font-mono">EVIDENCE NOT FOUND</h2>
+          <p className="text-xs text-red-700 font-mono">
+            {fetchError || 'Unable to retrieve scan record for evidence inspection.'}
+          </p>
+          <div className="pt-2">
+            <Link
+              href="/scan"
+              className="px-4 py-2 text-xs font-mono font-bold bg-[#0A2540] text-white hover:bg-[#1E3A8A] transition-colors"
+            >
+              Start New Package Scan &rarr;
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const evaluatedRules = report.results || [];
   const currentImage = packageImages[activeImageIndex] || {
@@ -102,6 +178,21 @@ export default function EvidenceViewerPage() {
     name: `${activeFace.toUpperCase()} Face`,
   };
   const displayImagePath = currentImage?.imagePath || imagePath;
+  const isMultiFace = packageImages.length > 1;
+
+  const getRuleForField = (fieldKey: string): RuleEvaluationDetail | undefined => {
+    return evaluatedRules.find(
+      (r) =>
+        r.field === fieldKey ||
+        (fieldKey === 'commodity_description' && (r.field === 'commodity_name' || r.rule_code === 'RULE-02')) ||
+        (fieldKey === 'manufacturer_name' && (r.field === 'manufacturer' || r.rule_code === 'RULE-01')) ||
+        (fieldKey === 'net_quantity' && (r.field === 'net_quantity' || r.rule_code === 'RULE-03')) ||
+        (fieldKey === 'month_year' && (r.field === 'month_year' || r.rule_code === 'RULE-04')) ||
+        (fieldKey === 'consumer_care' && (r.field === 'consumer_care' || r.rule_code === 'RULE-07')) ||
+        (fieldKey === 'mrp' && (r.field === 'mrp' || r.rule_code === 'RULE-06')) ||
+        (fieldKey === 'country_of_origin' && (r.field === 'country_of_origin' || r.rule_code === 'RULE-05'))
+    );
+  };
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto py-2">
@@ -131,7 +222,7 @@ export default function EvidenceViewerPage() {
         <div className="border-r border-[#CBD5E1] p-1">
           <span className="text-[10px] text-[#64748B] uppercase block font-bold">1. WHERE?</span>
           <span className="font-bold text-[#0A2540] truncate block">
-            {currentImage?.name || (displayImagePath ? displayImagePath.split('/').pop() : selectedRule.evidence?.source_image || 'package_face.jpg')}
+            {currentImage?.name || (displayImagePath ? displayImagePath.split('/').pop() : 'package_face.jpg')}
           </span>
         </div>
         <div className="border-r border-[#CBD5E1] p-1">
@@ -154,62 +245,91 @@ export default function EvidenceViewerPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-[600px]">
         {/* LEFT 50%: Interactive Package Canvas */}
         <div className="lg:col-span-6 bg-white border border-[#CBD5E1] flex flex-col shadow-xs">
-          <div className="p-3 border-b border-[#CBD5E1] bg-[#F8FAFC] flex flex-wrap items-center justify-between gap-2 font-mono text-xs">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 bg-[#0A2540]"></span>
-              <span className="font-bold uppercase tracking-wider text-[#0A2540]">
-                Package Canvas Overlay
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {packageImages.length > 0 ? (
-                packageImages.map((img, idx) => {
-                  const isActive = idx === activeImageIndex;
-                  return (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => {
-                        setActiveImageIndex(idx);
-                        setActiveFace(img.face.toLowerCase());
-                      }}
-                      className={`px-3 py-1 text-xs font-mono font-medium cursor-pointer border transition-all flex items-center gap-1.5 ${
-                        isActive
-                          ? 'bg-[#0A2540] text-white border-[#0A2540] shadow-xs'
-                          : 'bg-white text-[#64748B] border-[#CBD5E1] hover:text-[#0A2540] hover:border-[#0A2540]'
-                      }`}
-                    >
-                      <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-[#EA580C]' : 'bg-slate-300'}`} />
-                      <span>{img.name || `${img.face} Face`}</span>
-                    </button>
-                  );
-                })
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setActiveFace('front')}
-                    className={`px-3 py-1 text-xs cursor-pointer border transition-colors ${
-                      activeFace === 'front'
-                        ? 'bg-[#0A2540] text-white border-[#0A2540]'
-                        : 'bg-white text-[#64748B] border-[#CBD5E1] hover:text-[#0A2540]'
-                    }`}
-                  >
-                    Front Face
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveFace('back')}
-                    className={`px-3 py-1 text-xs cursor-pointer border transition-colors ${
-                      activeFace === 'back'
-                        ? 'bg-[#0A2540] text-white border-[#0A2540]'
-                        : 'bg-white text-[#64748B] border-[#CBD5E1] hover:text-[#0A2540]'
-                    }`}
-                  >
-                    Back Face
-                  </button>
-                </>
+          {/* Top Canvas Bar with Face Toggle */}
+          <div className="p-3 border-b border-[#CBD5E1] bg-[#F8FAFC] space-y-2 font-mono text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 bg-[#0A2540]"></span>
+                <span className="font-bold uppercase tracking-wider text-[#0A2540]">
+                  Package Canvas Overlay
+                </span>
+              </div>
+
+              {isMultiFace && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {packageImages.map((img, idx) => {
+                    const isActive = idx === activeImageIndex;
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setActiveImageIndex(idx);
+                          setActiveFace(img.face.toLowerCase());
+                        }}
+                        className={`px-3 py-1 text-xs font-mono font-medium cursor-pointer border transition-all flex items-center gap-1.5 ${
+                          isActive
+                            ? 'bg-[#0A2540] text-white border-[#0A2540] shadow-xs'
+                            : 'bg-white text-[#64748B] border-[#CBD5E1] hover:text-[#0A2540] hover:border-[#0A2540]'
+                        }`}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-[#EA580C]' : 'bg-slate-300'}`} />
+                        <span>{img.name || `${img.face} Face`}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               )}
+            </div>
+
+            {/* Top status chips bar (mrp ✗  quantity ✓  description ✓ ...) */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 pt-1 scrollbar-thin">
+              <span className="text-[10px] font-bold text-[#64748B] uppercase shrink-0">
+                Declarations:
+              </span>
+              {STATUTORY_FIELD_CONFIG.map(({ key, label }) => {
+                const rule = getRuleForField(key);
+                const isSelected = selectedRule.field === key;
+                const status = rule?.status;
+
+                let chipStyle = 'bg-white text-[#475569] border-[#CBD5E1]';
+                let icon = '—';
+                let iconCol = 'text-slate-400';
+
+                if (status === 'PASS') {
+                  chipStyle = isSelected
+                    ? 'bg-[#15803D] text-white border-[#15803D]'
+                    : 'bg-[#F0FDF4] text-[#15803D] border-[#BBF7D0]';
+                  icon = '✓';
+                  iconCol = isSelected ? 'text-white' : 'text-[#15803D]';
+                } else if (status === 'FAIL') {
+                  chipStyle = isSelected
+                    ? 'bg-[#B91C1C] text-white border-[#B91C1C]'
+                    : 'bg-[#FEF2F2] text-[#B91C1C] border-[#FECACA]';
+                  icon = '✕';
+                  iconCol = isSelected ? 'text-white' : 'text-[#B91C1C]';
+                } else if (status === 'REVIEW') {
+                  chipStyle = isSelected
+                    ? 'bg-[#D97706] text-white border-[#D97706]'
+                    : 'bg-[#FFFBEB] text-[#B45309] border-[#FDE68A]';
+                  icon = '⚠';
+                  iconCol = isSelected ? 'text-white' : 'text-[#B45309]';
+                }
+
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => {
+                      if (rule) setSelectedRule(rule);
+                    }}
+                    className={`px-2 py-0.5 text-[10px] font-mono border flex items-center gap-1 shrink-0 cursor-pointer ${chipStyle}`}
+                  >
+                    <span>{key.replace('_', ' ')}</span>
+                    <span className={`font-bold ${iconCol}`}>{icon}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -240,21 +360,45 @@ export default function EvidenceViewerPage() {
                 </div>
               )}
 
-              {/* Bounding box overlays */}
-              {Object.entries(boundingBoxes).map(([fieldName, box]) => {
-                if (box.face && box.face.toLowerCase() !== activeFace.toLowerCase()) return null;
-                const isSelected = selectedRule.field === fieldName;
-                const rule = evaluatedRules.find((r) => r.field === fieldName);
+              {/* Bounding box overlays (Matching user photo) */}
+              {STATUTORY_FIELD_CONFIG.map(({ key, defaultBox }) => {
+                const rawBox = boundingBoxes[key];
+                const rule = getRuleForField(key);
+
+                if (rawBox?.face && isMultiFace && rawBox.face.toLowerCase() !== activeFace) {
+                  return null;
+                }
+
+                const hasData =
+                  rawBox && rawBox.width > 0 && rawBox.height > 0
+                    ? true
+                    : !!rule?.extracted_value || (rule?.status === 'FAIL' && key === 'mrp');
+
+                if (!hasData) return null;
+
+                const box =
+                  rawBox && rawBox.width > 0 && rawBox.height > 0
+                    ? rawBox
+                    : defaultBox;
+
+                const isSelected = selectedRule.field === key;
                 const isFail = rule?.status === 'FAIL';
                 const isReview = rule?.status === 'REVIEW';
 
-                let borderCol = 'border-[#15803D] bg-[#F0FDF4]/80 text-[#15803D]';
-                if (isFail) borderCol = 'border-[#B91C1C] bg-[#FEF2F2]/80 text-[#B91C1C]';
-                else if (isReview) borderCol = 'border-[#D97706] bg-[#FFFBEB]/80 text-[#B45309]';
+                let borderCol = 'border-[#10B981] bg-[#10B981]/20 text-emerald-950';
+                let icon = '✓';
+
+                if (isFail) {
+                  borderCol = 'border-[#EF4444] bg-[#EF4444]/25 text-rose-950';
+                  icon = '✕';
+                } else if (isReview) {
+                  borderCol = 'border-[#F59E0B] bg-[#F59E0B]/25 text-amber-950';
+                  icon = '⚠';
+                }
 
                 return (
                   <div
-                    key={fieldName}
+                    key={key}
                     onClick={() => {
                       if (rule) setSelectedRule(rule);
                     }}
@@ -264,20 +408,18 @@ export default function EvidenceViewerPage() {
                       width: `${box.width}%`,
                       height: `${box.height}%`,
                     }}
-                    className={`absolute cursor-pointer border-2 transition-all flex items-start justify-between p-1 ${borderCol} ${
+                    className={`absolute cursor-pointer border-2 transition-all flex items-center justify-between px-1.5 py-0.5 rounded-xs ${borderCol} ${
                       isSelected
-                        ? 'ring-2 ring-[#0A2540] ring-offset-2 ring-offset-white z-20 shadow-lg'
-                        : 'opacity-80 hover:opacity-100 z-10'
+                        ? 'ring-2 ring-[#0A2540] ring-offset-2 ring-offset-white z-30 shadow-lg scale-[1.01]'
+                        : 'opacity-85 hover:opacity-100 z-10'
                     }`}
                   >
-                    <span className="text-[9px] font-mono font-bold bg-white text-[#0A2540] px-1 py-0.5 leading-none border border-[#CBD5E1]">
-                      {fieldName}
+                    <span className="text-[10px] font-mono font-bold bg-white/90 text-[#0A2540] px-1 py-0.2 rounded-xs border border-[#CBD5E1]/80 truncate max-w-[80%]">
+                      {key}
                     </span>
-                    {rule && (
-                      <span className="text-[9px] font-mono font-bold leading-none">
-                        {rule.status === 'PASS' ? '✓' : rule.status === 'FAIL' ? '✕' : '⚠'}
-                      </span>
-                    )}
+                    <span className="text-[11px] font-mono font-black shrink-0 bg-white/90 px-1 py-0.2 rounded-xs">
+                      {icon}
+                    </span>
                   </div>
                 );
               })}

@@ -1,4 +1,5 @@
 import { createWorker } from 'tesseract.js';
+import sharp from 'sharp';
 import type { BoundingBox } from './types';
 
 export interface LocalOcrResult {
@@ -11,10 +12,23 @@ export interface LocalOcrResult {
  * Perform optical character recognition locally using Tesseract.js
  */
 export async function runLocalOcr(imageBuffer: Buffer): Promise<LocalOcrResult> {
+  // Preprocess image to boost contrast and sharpness for superior OCR accuracy
+  let ocrBuffer = imageBuffer;
+  try {
+    ocrBuffer = await sharp(imageBuffer)
+      .resize(1800, 1800, { fit: 'inside', withoutEnlargement: true })
+      .grayscale()
+      .normalize()
+      .sharpen()
+      .toBuffer();
+  } catch {
+    ocrBuffer = imageBuffer;
+  }
+
   const worker = await createWorker('eng');
 
   try {
-    const result = await worker.recognize(imageBuffer);
+    const result = await worker.recognize(ocrBuffer);
     const data = result.data as any;
     const text = data.text || '';
     const confidence = (data.confidence || 0) / 100;
