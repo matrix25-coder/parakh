@@ -6,6 +6,9 @@ import { useParams } from 'next/navigation';
 import { PageHeader, StatusBadge, SeverityBadge, ConfidenceBadge } from '@/components/ui';
 import type { RuleEvaluationDetail, ComplianceReport } from '@/lib/types';
 import type { BoundingBox } from '@/lib/extraction/types';
+import { getScanFromClient, saveScanToClient } from '@/lib/client-scan-cache';
+import { WELLCORE_SCAN_FIXTURE } from '@/lib/demo/wellcore-fixture';
+import { DEMO_REPORT } from '@/lib/demo/fixtures';
 
 interface PackageImageItem {
   face: string;
@@ -69,66 +72,111 @@ export default function EvidenceViewerPage() {
   const [boundingBoxes, setBoundingBoxes] = useState<Record<string, BoundingBox>>({});
   const [fetchError, setFetchError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setIsLoading(true);
-    setFetchError(null);
-    fetch(`/api/scan/${id}`)
-      .then((res) => {
-        if (!res.ok) throw new Error('Scan not found');
-        return res.json();
-      })
-      .then((data) => {
-        if (data.image_path) {
-          setImagePath(data.image_path);
-        }
+  const applyEvidenceData = (data: any) => {
+    if (data.image_path) {
+      setImagePath(data.image_path);
+    }
 
-        const loadedImages: PackageImageItem[] = [];
-        if (data.images && Array.isArray(data.images) && data.images.length > 0) {
-          loadedImages.push(...data.images);
-        } else if (data.package_faces && Array.isArray(data.package_faces) && data.package_faces.length > 0) {
-          data.package_faces.forEach((f: any) => {
-            if (typeof f === 'string') {
-              loadedImages.push({ face: f, imagePath: data.image_path || '', name: `${f} Face` });
-            } else {
-              loadedImages.push({
-                face: f.face || 'FRONT',
-                imagePath: f.imagePath || data.image_path || '',
-                name: f.name || `${f.face || 'FRONT'} Face`,
-              });
-            }
+    const loadedImages: PackageImageItem[] = [];
+    const sourceImages = data.package_faces || data.images || [];
+    if (Array.isArray(sourceImages) && sourceImages.length > 0) {
+      sourceImages.forEach((f: any) => {
+        if (typeof f === 'string') {
+          loadedImages.push({ face: f, imagePath: data.image_path || '', name: `${f} Face` });
+        } else {
+          loadedImages.push({
+            face: f.face || 'FRONT',
+            imagePath: f.dataUrl || f.imagePath || data.image_path || '',
+            name: f.name || `${f.face || 'FRONT'} Face`,
           });
         }
+      });
+    }
 
-        if (loadedImages.length === 0 && data.image_path) {
-          loadedImages.push({ face: 'FRONT', imagePath: data.image_path, name: 'Front Face' });
-        }
+    if (loadedImages.length === 0 && data.image_path) {
+      loadedImages.push({ face: 'FRONT', imagePath: data.image_path, name: 'Front Face' });
+    }
 
-        setPackageImages(loadedImages);
-        if (loadedImages.length > 0) {
-          setActiveImageIndex(0);
-          setActiveFace(loadedImages[0].face.toLowerCase());
-        }
+    setPackageImages(loadedImages);
+    if (loadedImages.length > 0) {
+      setActiveImageIndex(0);
+      setActiveFace(loadedImages[0].face.toLowerCase());
+    }
 
-        if (data.complianceResult) {
-          setReport(data.complianceResult);
-          const firstFail = data.complianceResult.results?.find((r: any) => r.status === 'FAIL');
-          if (firstFail) {
-            setSelectedRule(firstFail);
-          } else if (data.complianceResult.results?.[0]) {
-            setSelectedRule(data.complianceResult.results[0]);
+    if (data.complianceResult) {
+      setReport(data.complianceResult);
+      const firstFail = data.complianceResult.results?.find((r: any) => r.status === 'FAIL');
+      if (firstFail) {
+        setSelectedRule(firstFail);
+      } else if (data.complianceResult.results?.[0]) {
+        setSelectedRule(data.complianceResult.results[0]);
+      }
+    }
+
+    if (data.extractedData?.boundingBoxes && Object.keys(data.extractedData.boundingBoxes).length > 0) {
+      setBoundingBoxes(data.extractedData.boundingBoxes);
+    }
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+    setFetchError(null);
+
+    async function loadEvidence() {
+      // 1. Check local client cache
+      let localScan = await getScanFromClient(id);
+      if (!localScan && id === 'wellcore-creatine-analysis') {
+        localScan = WELLCORE_SCAN_FIXTURE as any;
+      }
+      if (isMounted && localScan && localScan.complianceResult) {
+        applyEvidenceData(localScan);
+        setIsLoading(false);
+      }
+
+      // 2. Fetch server
+      try {
+        const res = await fetch(`/api/scan/${id}`);
+        if (res.ok) {
+          const serverData = await res.json();
+          if (isMounted) {
+            applyEvidenceData(serverData);
+            saveScanToClient(serverData);
+          }
+        } else if (!localScan) {
+          if (id === 'wellcore-creatine-analysis') {
+            if (isMounted) applyEvidenceData(WELLCORE_SCAN_FIXTURE);
+          } else {
+            const latest = await getScanFromClient('latest');
+            if (isMounted) {
+              if (latest?.complianceResult) {
+                applyEvidenceData(latest);
+              } else if (id === '1') {
+                applyEvidenceData({
+                  id: '1',
+                  image_path: '/uploads/sample_ghee.jpg',
+                  complianceResult: DEMO_REPORT,
+                });
+              } else {
+                setFetchError('Evidence record not found.');
+              }
+            }
           }
         }
-        if (data.extractedData?.boundingBoxes && Object.keys(data.extractedData.boundingBoxes).length > 0) {
-          setBoundingBoxes(data.extractedData.boundingBoxes);
-        }
-      })
-      .catch((err) => {
+      } catch (err: any) {
         console.warn('Could not fetch scan evidence data:', err);
-        setFetchError(err.message || 'Failed to load evidence');
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
+        if (!localScan && isMounted) {
+          setFetchError(err.message || 'Failed to load evidence');
+        }
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+
+    loadEvidence();
+    return () => {
+      isMounted = false;
+    };
   }, [id]);
 
   if (isLoading) {

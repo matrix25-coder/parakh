@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getScanById, updateScanReview } from '@/lib/db';
+import { getScanById, updateScanReview, createScan } from '@/lib/db';
 import { evaluateCompliance } from '@/lib/rule-engine';
 import { getAuthUserFromRequest } from '@/lib/auth/middleware-utils';
 import type { StructuredProductData } from '@/lib/extraction/types';
@@ -13,20 +13,37 @@ export async function PUT(
     const body = await req.json();
     const { fields, productName, category, isImported, countryOfOrigin } = body;
 
-    const record = getScanById(id);
-    if (!record) {
-      return NextResponse.json(
-        { error: 'Inspection scan record not found.' },
-        { status: 404 }
-      );
-    }
-
+    let record = getScanById(id);
     const authUser = await getAuthUserFromRequest(req);
-    // Allow owner or default officer
-    const userId = authUser?.id || record.user_id;
+    const userId = authUser?.id || record?.user_id || 'usr_default_officer';
 
     // Load and update extracted data
-    const currentData: StructuredProductData = JSON.parse(record.extracted_data);
+    let currentData: StructuredProductData;
+    if (record) {
+      currentData = JSON.parse(record.extracted_data);
+    } else {
+      currentData = {
+        productName: productName || 'Packaged Commodity',
+        brand: null,
+        commodityName: null,
+        manufacturer: null,
+        packer: null,
+        importer: null,
+        address: null,
+        pincode: null,
+        mrp: { value: null, currency: 'INR', raw: null, hasInclusiveOfAllTaxes: false },
+        netQuantity: { value: null, unit: null, raw: null, isStandardUnit: false },
+        manufacturingDate: { month: null, year: null, raw: null, formatted: null, isCompliantFormat: false },
+        expiryDate: { raw: null },
+        consumerCare: { phone: null, email: null, address: null, raw: null },
+        countryOfOrigin: countryOfOrigin || 'India',
+        isImported: isImported || false,
+        rawOcrText: '',
+        fieldConfidences: {},
+        boundingBoxes: {},
+        pdpAreaCm2: 180,
+      };
+    }
 
     // Apply edited fields from review table
     if (Array.isArray(fields)) {
@@ -87,25 +104,43 @@ export async function PUT(
       ? isImported
       : currentData.isImported !== undefined
       ? currentData.isImported
-      : record.is_imported === 1;
+      : record ? record.is_imported === 1 : false;
 
     // Re-evaluate Rule Engine with updated declarations
     const newCompliance = evaluateCompliance(currentData, {
-      productName: productName || record.product_name,
-      category: category || record.category,
+      productName: productName || record?.product_name || 'Packaged Commodity',
+      category: category || record?.category || 'FOOD',
       isImported: resolvedIsImported,
-      countryOfOrigin: countryOfOrigin || currentData.countryOfOrigin || record.country_of_origin || undefined,
+      countryOfOrigin: countryOfOrigin || currentData.countryOfOrigin || record?.country_of_origin || undefined,
     });
 
-    // Update record in database
-    updateScanReview(
-      id,
-      record.user_id,
-      currentData,
-      newCompliance,
-      newCompliance.overall_status,
-      newCompliance.violations.length
-    );
+    // Update or create record in database
+    if (record) {
+      updateScanReview(
+        id,
+        record.user_id,
+        currentData,
+        newCompliance,
+        newCompliance.overall_status,
+        newCompliance.violations.length
+      );
+    } else {
+      createScan({
+        id,
+        userId,
+        productName: productName || 'Packaged Commodity',
+        category: category || 'FOOD',
+        isImported: resolvedIsImported,
+        countryOfOrigin: countryOfOrigin || currentData.countryOfOrigin || 'India',
+        imagePath: '/uploads/uploaded_image.jpg',
+        packageFaces: [],
+        rawOcrText: '',
+        extractedData: currentData,
+        complianceResult: newCompliance,
+        overallStatus: newCompliance.overall_status,
+        violationsCount: newCompliance.violations.length,
+      });
+    }
 
     return NextResponse.json({
       success: true,

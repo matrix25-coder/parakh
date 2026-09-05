@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { StatusBadge, SeverityBadge, FontAuditCard } from '@/components/ui';
 import { DEMO_REPORT, DEMO_FONT_AUDITS } from '@/lib/demo/fixtures';
+import { WELLCORE_SCAN_FIXTURE } from '@/lib/demo/wellcore-fixture';
+import { getScanFromClient, saveScanToClient } from '@/lib/client-scan-cache';
 import type { ComplianceReport, FontReadabilityAudit } from '@/lib/types';
 
 export default function ComplianceReportPage() {
@@ -17,33 +19,73 @@ export default function ComplianceReportPage() {
   const [inspectorName, setInspectorName] = useState('Field Inspection Officer');
   const [scanDate, setScanDate] = useState('2026-09-04 17:35 IST');
 
+  const applyReportData = (data: any) => {
+    if (data.complianceResult) {
+      setReport(data.complianceResult);
+      if (data.complianceResult.font_audits) {
+        setFontAudits(data.complianceResult.font_audits);
+      }
+    }
+    if (data.inspector_name || data.inspectorName) {
+      setInspectorName(data.inspector_name || data.inspectorName);
+    }
+    if (data.created_at) {
+      setScanDate(new Date(data.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST');
+    }
+  };
+
   useEffect(() => {
+    let isMounted = true;
     setIsLoading(true);
-    fetch(`/api/scan/${id}`)
-      .then((res) => {
-        if (!res.ok) throw new Error('Scan not found');
-        return res.json();
-      })
-      .then((data) => {
-        if (data.complianceResult) {
-          setReport(data.complianceResult);
-          if (data.complianceResult.font_audits) {
-            setFontAudits(data.complianceResult.font_audits);
+
+    async function loadReport() {
+      // 1. Check local client cache
+      let localScan = await getScanFromClient(id);
+      if (!localScan && id === 'wellcore-creatine-analysis') {
+        localScan = WELLCORE_SCAN_FIXTURE as any;
+      }
+      if (isMounted && localScan?.complianceResult) {
+        applyReportData(localScan);
+        setIsLoading(false);
+      }
+
+      // 2. Fetch server
+      try {
+        const res = await fetch(`/api/scan/${id}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted) {
+            applyReportData(data);
+            saveScanToClient(data);
+          }
+        } else if (!localScan) {
+          if (id === 'wellcore-creatine-analysis') {
+            if (isMounted) applyReportData(WELLCORE_SCAN_FIXTURE);
+          } else {
+            const latest = await getScanFromClient('latest');
+            if (isMounted) {
+              if (latest?.complianceResult) {
+                applyReportData(latest);
+              } else if (id === '1') {
+                applyReportData({
+                  complianceResult: DEMO_REPORT,
+                  inspector_name: 'Field Inspection Officer',
+                });
+              }
+            }
           }
         }
-        if (data.inspector_name) {
-          setInspectorName(data.inspector_name);
-        }
-        if (data.created_at) {
-          setScanDate(new Date(data.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST');
-        }
-      })
-      .catch((err) => {
-        console.warn('Could not fetch scan report:', err);
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
+      } catch (err) {
+        console.warn('Could not fetch scan report from server:', err);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+
+    loadReport();
+    return () => {
+      isMounted = false;
+    };
   }, [id]);
 
   const handlePrint = () => {

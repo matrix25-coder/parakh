@@ -10,16 +10,17 @@ import {
   PackageOverlayViewer,
 } from '@/components/ui';
 import type { FontReadabilityAudit, RuleEvaluationDetail } from '@/lib/types';
+import {
+  getScanFromClient,
+  saveScanToClient,
+  syncScanToServer,
+  buildStatutoryFieldRows,
+  type StatutoryFieldRow,
+} from '@/lib/client-scan-cache';
+import { WELLCORE_SCAN_FIXTURE } from '@/lib/demo/wellcore-fixture';
+import { DEMO_REPORT } from '@/lib/demo/fixtures';
 
-interface FieldRow {
-  field_name: string;
-  label: string;
-  rule_ref: string;
-  value: string;
-  confidence: number;
-  source_image: string;
-  status: 'CONFIRMED' | 'REVIEW_REQUIRED' | 'MISSING';
-}
+type FieldRow = StatutoryFieldRow;
 
 export default function ExtractionReviewPage() {
   const params = useParams();
@@ -36,122 +37,91 @@ export default function ExtractionReviewPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  const applyScanRecord = (data: any) => {
+    setScanData(data);
+    setProductName(data.product_name || data.productName || 'Packaged Commodity');
+    setCategory(data.category || 'FOOD');
+
+    if (data.complianceResult?.font_audits) {
+      setFontAudits(data.complianceResult.font_audits);
+    } else if (data.font_audits) {
+      setFontAudits(data.font_audits);
+    }
+
+    const rows = buildStatutoryFieldRows(data);
+    setFields(rows);
+    if (rows[0]) {
+      setSelectedField(rows[0].field_name);
+    }
+  };
+
   useEffect(() => {
+    let isMounted = true;
     setIsLoading(true);
-    fetch(`/api/scan/${id}`)
-      .then((res) => {
-        if (!res.ok) throw new Error('Scan not found');
-        return res.json();
-      })
-      .then((data) => {
-        setScanData(data);
-        setProductName(data.product_name || 'Packaged Commodity');
-        setCategory(data.category || 'FOOD');
 
-        if (data.complianceResult?.font_audits) {
-          setFontAudits(data.complianceResult.font_audits);
-        }
-
-        const ext = data.extractedData || {};
-        const conf = ext.fieldConfidences || {};
-
-        const mfgVal = ext.manufacturer
-          ? `${ext.manufacturer}${ext.address && !ext.manufacturer.includes(ext.address) ? ', ' + ext.address : ''}`
-          : '';
-        const commVal = ext.commodityName || data.product_name || '';
-        const qtyVal = ext.netQuantity?.value ? String(ext.netQuantity.value) : ext.netQuantity?.raw || '';
-        const unitVal = ext.netQuantity?.unit || '';
-        const mrpVal = ext.mrp?.raw || (ext.mrp?.value ? `₹ ${ext.mrp.value}` : '');
-        const dateVal = ext.manufacturingDate?.formatted || ext.manufacturingDate?.raw || '';
-        const originVal = ext.countryOfOrigin || (data.is_imported ? 'Imported' : 'India');
-        const ccVal = ext.consumerCare?.raw || (ext.consumerCare?.phone ? `Tel: ${ext.consumerCare.phone}` : '');
-
-        const rows: FieldRow[] = [
-          {
-            field_name: 'commodity_description',
-            label: 'Generic or Common Name of Commodity',
-            rule_ref: 'Rule 6(1)(b)',
-            value: commVal,
-            confidence: conf.commodity_description ?? (commVal ? 0.95 : 0.0),
-            source_image: 'front_label.jpg',
-            status: !commVal ? 'MISSING' : 'CONFIRMED',
-          },
-          {
-            field_name: 'manufacturer_name',
-            label: 'Manufacturer / Packer Name & Address',
-            rule_ref: 'Rule 6(1)(a)',
-            value: mfgVal,
-            confidence: conf.manufacturer_name ?? (mfgVal ? 0.95 : 0.0),
-            source_image: 'front_label.jpg',
-            status: !mfgVal ? 'MISSING' : (conf.manufacturer_name && conf.manufacturer_name < 0.9 ? 'REVIEW_REQUIRED' : 'CONFIRMED'),
-          },
-          {
-            field_name: 'net_quantity',
-            label: 'Net Quantity Declaration',
-            rule_ref: 'Rule 6(1)(c)',
-            value: qtyVal,
-            confidence: conf.net_quantity ?? (qtyVal ? 0.95 : 0.0),
-            source_image: 'front_label.jpg',
-            status: !qtyVal ? 'MISSING' : 'CONFIRMED',
-          },
-          {
-            field_name: 'unit',
-            label: 'Measurement Unit Symbol',
-            rule_ref: 'Rule 12 & Sch. II',
-            value: unitVal,
-            confidence: conf.net_quantity ?? (unitVal ? 0.95 : 0.0),
-            source_image: 'front_label.jpg',
-            status: !unitVal ? 'MISSING' : 'CONFIRMED',
-          },
-          {
-            field_name: 'mrp',
-            label: 'Maximum Retail Price (MRP)',
-            rule_ref: 'Rule 6(1)(e)',
-            value: mrpVal,
-            confidence: conf.mrp ?? (mrpVal ? 0.95 : 0.0),
-            source_image: 'front_label.jpg',
-            status: !mrpVal ? 'MISSING' : 'CONFIRMED',
-          },
-          {
-            field_name: 'month_year',
-            label: 'Month & Year of Manufacture / Packing',
-            rule_ref: 'Rule 6(1)(d)',
-            value: dateVal,
-            confidence: conf.month_year ?? (dateVal ? 0.92 : 0.0),
-            source_image: 'front_label.jpg',
-            status: !dateVal ? 'MISSING' : 'CONFIRMED',
-          },
-          {
-            field_name: 'consumer_care',
-            label: 'Consumer Care / Grievance Redressal Contact',
-            rule_ref: 'Rule 6(1)(f)',
-            value: ccVal,
-            confidence: conf.consumer_care ?? (ccVal ? 0.85 : 0.0),
-            source_image: 'back_label.jpg',
-            status: !ccVal ? 'MISSING' : ((conf.consumer_care && conf.consumer_care < 0.9) ? 'REVIEW_REQUIRED' : 'CONFIRMED'),
-          },
-          {
-            field_name: 'country_of_origin',
-            label: 'Country of Origin (Imported)',
-            rule_ref: 'Rule 6(1)(da)',
-            value: originVal,
-            confidence: conf.country_of_origin ?? 0.99,
-            source_image: 'front_label.jpg',
-            status: 'CONFIRMED',
-          },
-        ];
-
-        setFields(rows);
-        if (rows[0]) {
-          setSelectedField(rows[0].field_name);
-        }
-      })
-      .catch((err) => {
-        console.warn('Could not load scan data:', err);
-      })
-      .finally(() => {
+    async function loadData() {
+      // 1. Check client storage first (instant zero-latency recovery)
+      let localScan = await getScanFromClient(id);
+      if (!localScan && id === 'wellcore-creatine-analysis') {
+        localScan = WELLCORE_SCAN_FIXTURE as any;
+      }
+      if (isMounted && localScan) {
+        applyScanRecord(localScan);
         setIsLoading(false);
-      });
+        syncScanToServer(localScan);
+      }
+
+      // 2. Fetch fresh or verify from server
+      try {
+        const res = await fetch(`/api/scan/${id}`);
+        if (res.ok) {
+          const serverData = await res.json();
+          if (isMounted) {
+            applyScanRecord(serverData);
+            saveScanToClient(serverData);
+          }
+        } else if (!localScan) {
+          // If server returns 404 and no local scan, use Wellcore or latest scan fallback
+          if (id === 'wellcore-creatine-analysis') {
+            if (isMounted) applyScanRecord(WELLCORE_SCAN_FIXTURE);
+          } else {
+            const latestScan = await getScanFromClient('latest');
+            if (isMounted) {
+              if (latestScan) {
+                applyScanRecord(latestScan);
+              } else {
+                applyScanRecord({
+                  id,
+                  product_name: DEMO_REPORT.product_name,
+                  category: DEMO_REPORT.category,
+                  extractedData: {
+                    manufacturer: 'NutriFoods India Pvt Ltd, Industrial Area, Pune 411018',
+                    commodityName: DEMO_REPORT.product_name,
+                    netQuantity: { value: 150, unit: 'g', raw: '150 g' },
+                    mrp: { value: 120, raw: '₹ 120.00 (Incl. of all taxes)' },
+                    manufacturingDate: { formatted: '08/2026', raw: '08/2026' },
+                    consumerCare: { raw: 'Tel: 1800-222-333' },
+                    countryOfOrigin: 'India',
+                  },
+                  complianceResult: DEMO_REPORT,
+                });
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Could not fetch scan data from server:', err);
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    loadData();
+    return () => {
+      isMounted = false;
+    };
   }, [id]);
 
   const handleFieldChange = (index: number, newVal: string) => {
@@ -168,6 +138,28 @@ export default function ExtractionReviewPage() {
     setIsSubmitting(true);
     setSubmitError(null);
 
+    // 1. Immediately persist user changes to client cache
+    if (scanData) {
+      const updatedScan = {
+        ...scanData,
+        product_name: productName,
+        category,
+      };
+      const ext = { ...(updatedScan.extractedData || {}) };
+      fields.forEach((f) => {
+        if (f.field_name === 'commodity_description') ext.commodityName = f.value;
+        if (f.field_name === 'manufacturer_name') { ext.manufacturer = f.value; ext.address = f.value; }
+        if (f.field_name === 'mrp') ext.mrp = { ...ext.mrp, raw: f.value, value: parseFloat(f.value.replace(/[^0-9.]/g, '')) || ext.mrp?.value };
+        if (f.field_name === 'net_quantity') ext.netQuantity = { ...ext.netQuantity, raw: f.value, value: parseFloat(f.value) || ext.netQuantity?.value };
+        if (f.field_name === 'unit') ext.netQuantity = { ...ext.netQuantity, unit: f.value };
+        if (f.field_name === 'month_year') ext.manufacturingDate = { ...ext.manufacturingDate, raw: f.value, formatted: f.value };
+        if (f.field_name === 'consumer_care') ext.consumerCare = { ...ext.consumerCare, raw: f.value };
+        if (f.field_name === 'country_of_origin') ext.countryOfOrigin = f.value;
+      });
+      updatedScan.extractedData = ext;
+      await saveScanToClient(updatedScan);
+    }
+
     try {
       const res = await fetch(`/api/scan/${id}/review`, {
         method: 'PUT',
@@ -179,18 +171,24 @@ export default function ExtractionReviewPage() {
         }),
       });
 
-      if (!res.ok) {
+      if (res.ok) {
         const data = await res.json();
-        throw new Error(data.error || 'Failed to update declarations.');
+        if (scanData && data.complianceResult) {
+          const updatedScan = {
+            ...scanData,
+            extractedData: data.extractedData || scanData.extractedData,
+            complianceResult: data.complianceResult,
+            overall_status: data.overallStatus || data.complianceResult.overall_status,
+            violations_count: data.complianceResult.violations?.length || 0,
+          };
+          await saveScanToClient(updatedScan);
+        }
       }
-
-      router.push(`/scan/${id}/results`);
     } catch (err: any) {
       console.warn('Submit warning:', err);
-      // Still allow progression to results
-      router.push(`/scan/${id}/results`);
     } finally {
       setIsSubmitting(false);
+      router.push(`/scan/${id}/results`);
     }
   };
 

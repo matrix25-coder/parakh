@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getScanById } from '@/lib/db';
+import { getScanById, createScan } from '@/lib/db';
 import { DEMO_REPORT } from '@/lib/demo/fixtures';
+import { WELLCORE_SCAN_FIXTURE } from '@/lib/demo/wellcore-fixture';
 
 export async function GET(
   req: NextRequest,
@@ -12,6 +13,10 @@ export async function GET(
     const record = getScanById(id);
 
     if (!record) {
+      if (id === 'wellcore-creatine-analysis') {
+        return NextResponse.json(WELLCORE_SCAN_FIXTURE);
+      }
+
       // If requested ID is demo id "1", return demo fixture as fallback
       if (id === '1') {
         return NextResponse.json({
@@ -101,5 +106,45 @@ export async function GET(
       { error: 'Failed to retrieve scan record.' },
       { status: 500 }
     );
+  }
+}
+
+export async function POST(
+  req: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await context.params;
+    const body = await req.json();
+    const scan = body.scanRecord || body;
+
+    if (!scan || !scan.id) {
+      return NextResponse.json({ error: 'Invalid scan record provided.' }, { status: 400 });
+    }
+
+    const existing = getScanById(id);
+    if (!existing) {
+      createScan({
+        id: scan.id || id,
+        userId: 'usr_default_officer',
+        productName: scan.product_name || scan.productName || 'Packaged Commodity',
+        category: scan.category || 'FOOD',
+        isImported: scan.is_imported ?? scan.isImported ?? false,
+        countryOfOrigin: scan.country_of_origin || scan.countryOfOrigin || 'India',
+        imagePath: scan.image_path || scan.imagePath || '/uploads/uploaded_image.jpg',
+        packageFaces: scan.package_faces || scan.images || [],
+        rawOcrText: scan.raw_ocr_text || scan.rawOcrText || '',
+        extractedData: scan.extractedData || {},
+        complianceResult: scan.complianceResult || {},
+        overallStatus: scan.overall_status || scan.overallStatus || 'PENDING',
+        violationsCount: scan.violations_count ?? scan.violationsCount ?? 0,
+        inspectorName: scan.inspector_name || scan.inspectorName || 'Field Inspection Officer',
+      });
+    }
+
+    return NextResponse.json({ success: true, id: scan.id || id });
+  } catch (err: any) {
+    console.error('Re-seed scan error:', err);
+    return NextResponse.json({ error: 'Failed to re-seed scan record.' }, { status: 500 });
   }
 }

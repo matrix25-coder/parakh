@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { PageHeader, SeverityBadge } from '@/components/ui';
 import { DEMO_REPORT } from '@/lib/demo/fixtures';
+import { WELLCORE_SCAN_FIXTURE } from '@/lib/demo/wellcore-fixture';
+import { getScanFromClient } from '@/lib/client-scan-cache';
 import type { ViolationDetail } from '@/lib/types';
 
 export default function ViolationsPage() {
@@ -15,25 +17,51 @@ export default function ViolationsPage() {
   const [violations, setViolations] = useState<ViolationDetail[]>([]);
 
   useEffect(() => {
+    let isMounted = true;
     setIsLoading(true);
-    fetch(`/api/scan/${id}`)
-      .then((res) => {
-        if (!res.ok) throw new Error('Scan not found');
-        return res.json();
-      })
-      .then((data) => {
-        if (data.complianceResult?.violations) {
-          setViolations(data.complianceResult.violations);
-        } else {
-          setViolations([]);
-        }
-      })
-      .catch((err) => {
-        console.warn('Could not fetch scan violations:', err);
-      })
-      .finally(() => {
+
+    async function loadViolations() {
+      // 1. Check local client cache
+      let localScan = await getScanFromClient(id);
+      if (!localScan && id === 'wellcore-creatine-analysis') {
+        localScan = WELLCORE_SCAN_FIXTURE as any;
+      }
+      if (isMounted && localScan?.complianceResult) {
+        setViolations(localScan.complianceResult.violations || []);
         setIsLoading(false);
-      });
+      }
+
+      // 2. Fetch server
+      try {
+        const res = await fetch(`/api/scan/${id}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted && data.complianceResult) {
+            setViolations(data.complianceResult.violations || []);
+          }
+        } else if (!localScan) {
+          if (id === 'wellcore-creatine-analysis') {
+            if (isMounted) setViolations(WELLCORE_SCAN_FIXTURE.complianceResult.violations || []);
+          } else {
+            const latest = await getScanFromClient('latest');
+            if (isMounted && latest?.complianceResult) {
+              setViolations(latest.complianceResult.violations || []);
+            } else if (isMounted && id === '1') {
+              setViolations(DEMO_REPORT.violations);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Could not fetch scan violations from server:', err);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+
+    loadViolations();
+    return () => {
+      isMounted = false;
+    };
   }, [id]);
 
   if (isLoading) {

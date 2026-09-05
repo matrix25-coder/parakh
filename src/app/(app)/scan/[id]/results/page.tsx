@@ -12,6 +12,9 @@ import {
   PackageOverlayViewer,
 } from '@/components/ui';
 import type { ComplianceReport, FontReadabilityAudit, RuleEvaluationDetail } from '@/lib/types';
+import { getScanFromClient, saveScanToClient, syncScanToServer } from '@/lib/client-scan-cache';
+import { WELLCORE_SCAN_FIXTURE } from '@/lib/demo/wellcore-fixture';
+import { DEMO_REPORT } from '@/lib/demo/fixtures';
 
 export default function ComplianceResultsPage() {
   const params = useParams();
@@ -27,39 +30,88 @@ export default function ComplianceResultsPage() {
   const [showVisualEvidence, setShowVisualEvidence] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
+  const applyScanRecord = (data: any) => {
+    setScanData(data);
+    if (data.complianceResult) {
+      setReport(data.complianceResult);
+      if (data.complianceResult.font_audits) {
+        setFontAudits(data.complianceResult.font_audits);
+      }
+      const firstFail = data.complianceResult.results?.find((r: any) => r.status === 'FAIL');
+      if (firstFail) {
+        setExpandedRuleCode(firstFail.rule_code);
+        setSelectedField(firstFail.field);
+      } else if (data.complianceResult.results?.[0]) {
+        setExpandedRuleCode(data.complianceResult.results[0].rule_code);
+        setSelectedField(data.complianceResult.results[0].field);
+      }
+    }
+  };
+
   useEffect(() => {
+    let isMounted = true;
     setIsLoading(true);
     setFetchError(null);
-    fetch(`/api/scan/${id}`)
-      .then((res) => {
-        if (!res.ok) throw new Error('Scan not found or failed to load');
-        return res.json();
-      })
-      .then((data) => {
-        setScanData(data);
-        if (data.complianceResult) {
-          setReport(data.complianceResult);
-          if (data.complianceResult.font_audits) {
-            setFontAudits(data.complianceResult.font_audits);
+
+    async function loadResults() {
+      // 1. Try instant client cache retrieval
+      let localScan = await getScanFromClient(id);
+      if (!localScan && id === 'wellcore-creatine-analysis') {
+        localScan = WELLCORE_SCAN_FIXTURE as any;
+      }
+      if (isMounted && localScan && localScan.complianceResult) {
+        applyScanRecord(localScan);
+        setIsLoading(false);
+        syncScanToServer(localScan);
+      }
+
+      // 2. Query server
+      try {
+        const res = await fetch(`/api/scan/${id}`);
+        if (res.ok) {
+          const serverData = await res.json();
+          if (isMounted) {
+            applyScanRecord(serverData);
+            saveScanToClient(serverData);
           }
-          // Default expand first violation if any
-          const firstFail = data.complianceResult.results?.find((r: any) => r.status === 'FAIL');
-          if (firstFail) {
-            setExpandedRuleCode(firstFail.rule_code);
-            setSelectedField(firstFail.field);
-          } else if (data.complianceResult.results?.[0]) {
-            setExpandedRuleCode(data.complianceResult.results[0].rule_code);
-            setSelectedField(data.complianceResult.results[0].field);
+        } else if (!localScan) {
+          if (id === 'wellcore-creatine-analysis') {
+            if (isMounted) applyScanRecord(WELLCORE_SCAN_FIXTURE);
+          } else {
+            // Check latest scan
+            const latestScan = await getScanFromClient('latest');
+            if (isMounted) {
+              if (latestScan && latestScan.complianceResult) {
+                applyScanRecord(latestScan);
+              } else if (id === '1') {
+                applyScanRecord({
+                  id: '1',
+                  product_name: DEMO_REPORT.product_name,
+                  category: DEMO_REPORT.category,
+                  complianceResult: DEMO_REPORT,
+                });
+              } else {
+                setFetchError('Scan record not found on server or local storage.');
+              }
+            }
           }
         }
-      })
-      .catch((err) => {
-        console.warn('Could not fetch scan report:', err);
-        setFetchError(err.message || 'Could not load scan record');
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
+      } catch (err: any) {
+        console.warn('Could not fetch scan report from server:', err);
+        if (!localScan && isMounted) {
+          setFetchError(err.message || 'Could not load scan record');
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    loadResults();
+    return () => {
+      isMounted = false;
+    };
   }, [id]);
 
   const handleSelectField = (fieldName: string, ruleCode?: string) => {

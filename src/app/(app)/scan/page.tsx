@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/ui';
 import type { PackageFace, ProductCategory } from '@/lib/types';
+import { saveScanToClient } from '@/lib/client-scan-cache';
 
 interface CapturedImage {
   id: string;
@@ -420,6 +421,41 @@ export default function ScanProductPage() {
 
       if (!res.ok) {
         throw new Error(data.error || `Failed to process packaged commodity scan (${res.status}).`);
+      }
+
+      // Cache scan locally so client pages have instant, infallible access (immune to Vercel cold restarts)
+      if (typeof window !== 'undefined' && data.scanId) {
+        try {
+          const clientScanRecord = {
+            id: data.scanId,
+            product_name: data.productName || productName,
+            category: data.category || category,
+            is_imported: isImported,
+            country_of_origin: countryOfOrigin,
+            image_path: data.imagePath,
+            package_faces: (data.package_faces || data.images || []).map((f: any, idx: number) => ({
+              face: f.face,
+              imagePath: f.imagePath,
+              dataUrl: images[idx]?.dataUrl,
+              name: f.name,
+            })),
+            images: (data.images || data.package_faces || []).map((f: any, idx: number) => ({
+              face: f.face,
+              imagePath: f.imagePath,
+              dataUrl: images[idx]?.dataUrl,
+              name: f.name,
+            })),
+            extractedData: data.extractedData,
+            complianceResult: data.complianceResult,
+            overall_status: data.overallStatus,
+            violations_count: data.violationsCount,
+            inspector_name: 'Field Inspection Officer',
+            created_at: new Date().toISOString(),
+          };
+          await saveScanToClient(clientScanRecord);
+        } catch (e) {
+          console.warn('Could not store scan in client storage:', e);
+        }
       }
 
       setScanProgressStage('Evaluating Legal Metrology rules...');

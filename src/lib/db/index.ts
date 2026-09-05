@@ -227,6 +227,9 @@ export interface CreateScanParams {
   inspectorName?: string | null;
 }
 
+const processScanCache = ((globalThis as any).__PARAKH_PROCESS_SCANS__ =
+  (globalThis as any).__PARAKH_PROCESS_SCANS__ || new Map<string, ScanRecord>());
+
 export function createScan(params: CreateScanParams): ScanRecord {
   const db = getDb();
   const now = new Date().toISOString();
@@ -256,7 +259,7 @@ export function createScan(params: CreateScanParams): ScanRecord {
     now
   );
 
-  return {
+  const record: ScanRecord = {
     id: params.id,
     user_id: params.userId,
     product_name: params.productName,
@@ -273,22 +276,42 @@ export function createScan(params: CreateScanParams): ScanRecord {
     inspector_name: params.inspectorName || null,
     created_at: now,
   };
+
+  processScanCache.set(params.id, record);
+  return record;
 }
 
 export function getScanById(scanId: string, userId?: string): ScanRecord | null {
-  const db = getDb();
-  let query = 'SELECT * FROM scan_history WHERE id = ?';
-  const args: any[] = [scanId];
+  try {
+    const db = getDb();
+    let query = 'SELECT * FROM scan_history WHERE id = ?';
+    const args: any[] = [scanId];
 
-  if (userId) {
-    query += ' AND user_id = ?';
-    args.push(userId);
+    if (userId) {
+      query += ' AND user_id = ?';
+      args.push(userId);
+    }
+    query += ' LIMIT 1';
+
+    const stmt = db.prepare(query);
+    const row = stmt.get(...args) as ScanRecord | undefined;
+    if (row) {
+      processScanCache.set(scanId, row);
+      return row;
+    }
+  } catch (err) {
+    console.warn('SQLite query failed, checking memory cache:', err);
   }
-  query += ' LIMIT 1';
 
-  const stmt = db.prepare(query);
-  const row = stmt.get(...args) as ScanRecord | undefined;
-  return row || null;
+  // Fallback to process in-memory cache
+  if (processScanCache.has(scanId)) {
+    const cached = processScanCache.get(scanId)!;
+    if (!userId || cached.user_id === userId) {
+      return cached;
+    }
+  }
+
+  return null;
 }
 
 export function getUserScans(userId: string): ScanRecord[] {

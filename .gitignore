@@ -40,5 +40,7 @@ data/*.db-wal
 data/*.sqlite
 public/uploads/*
 !public/uploads/.gitkeep
+!public/uploads/wellcore_*.jpg
+!public/uploads/sample_*.jpg
 !data/.gitkeep
 *.traineddata
