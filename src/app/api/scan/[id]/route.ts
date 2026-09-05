@@ -52,7 +52,31 @@ export async function GET(
 
     const extractedData = JSON.parse(record.extracted_data);
     const complianceResult = JSON.parse(record.compliance_result);
-    const packageFaces = record.package_faces ? JSON.parse(record.package_faces) : ['FRONT'];
+    let rawFaces: any[] = [];
+    try {
+      rawFaces = record.package_faces ? JSON.parse(record.package_faces) : [];
+    } catch {
+      rawFaces = [];
+    }
+
+    if (!Array.isArray(rawFaces) || rawFaces.length === 0) {
+      rawFaces = [{ face: 'FRONT', imagePath: record.image_path, name: 'Front Face' }];
+    }
+
+    const normalizedFaces = rawFaces.map((item: any) => {
+      if (typeof item === 'string') {
+        return {
+          face: item.toUpperCase(),
+          imagePath: record.image_path,
+          name: `${item} Face`,
+        };
+      }
+      return {
+        face: (item.face || 'FRONT').toUpperCase(),
+        imagePath: item.imagePath || record.image_path,
+        name: item.name || `${item.face || 'FRONT'} Face`,
+      };
+    });
 
     return NextResponse.json({
       id: record.id,
@@ -61,7 +85,8 @@ export async function GET(
       is_imported: record.is_imported === 1,
       country_of_origin: record.country_of_origin,
       image_path: record.image_path,
-      package_faces: packageFaces,
+      package_faces: normalizedFaces,
+      images: normalizedFaces,
       raw_ocr_text: record.raw_ocr_text,
       extractedData,
       complianceResult,

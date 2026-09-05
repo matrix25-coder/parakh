@@ -42,6 +42,16 @@ export async function POST(req: NextRequest) {
     let countryOfOrigin = 'India';
     let packageFace = 'FRONT';
 
+    interface SavedImageFace {
+      face: string;
+      imagePath: string;
+      name: string;
+      buffer: Buffer;
+      mimeType: string;
+    }
+
+    const savedFaces: SavedImageFace[] = [];
+
     if (contentType.includes('multipart/form-data')) {
       const formData = await req.formData();
       const file = formData.get('image') as File | null;
@@ -62,17 +72,19 @@ export async function POST(req: NextRequest) {
       originalFilename = file.name || 'uploaded_image.jpg';
       const arrayBuffer = await file.arrayBuffer();
       imageBuffer = Buffer.from(arrayBuffer);
-    } else {
-      // JSON body (base64 image or dataUrl)
-      const json = await req.json();
-      const { image, productName: pName, category: cat, isImported: isImp, countryOfOrigin: origin, face } = json;
 
-      if (!image) {
-        return NextResponse.json(
-          { error: 'Please upload or capture a product image.' },
-          { status: 400 }
-        );
-      }
+      const saved = await saveImageFile(imageBuffer, originalFilename);
+      savedFaces.push({
+        face: packageFace.toUpperCase(),
+        imagePath: saved.publicUrl,
+        name: originalFilename,
+        buffer: imageBuffer,
+        mimeType,
+      });
+    } else {
+      // JSON body (supports images array or single image)
+      const json = await req.json();
+      const { images: inputImages, image, productName: pName, category: cat, isImported: isImp, countryOfOrigin: origin, face } = json;
 
       productName = pName || '';
       category = cat || 'FOOD';
@@ -80,22 +92,64 @@ export async function POST(req: NextRequest) {
       countryOfOrigin = origin || (isImported ? 'Imported' : 'India');
       packageFace = face || 'FRONT';
 
-      // Parse data URL
-      const matches = image.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
-      if (matches) {
-        mimeType = matches[1];
-        imageBuffer = Buffer.from(matches[2], 'base64');
-      } else {
-        imageBuffer = Buffer.from(image, 'base64');
+      const rawImages: Array<{ dataUrl: string; face: string; name?: string }> = [];
+
+      if (inputImages && Array.isArray(inputImages) && inputImages.length > 0) {
+        inputImages.forEach((img: any) => {
+          const url = img.dataUrl || img.image;
+          if (url) {
+            rawImages.push({
+              dataUrl: url,
+              face: img.face || 'FRONT',
+              name: img.name || `${img.face || 'FRONT'}_face.jpg`,
+            });
+          }
+        });
+      } else if (image) {
+        rawImages.push({
+          dataUrl: image,
+          face: face || 'FRONT',
+          name: `${face || 'FRONT'}_face.jpg`,
+        });
       }
+
+      if (rawImages.length === 0) {
+        return NextResponse.json(
+          { error: 'Please upload or capture at least one product image.' },
+          { status: 400 }
+        );
+      }
+
+      for (const item of rawImages) {
+        let b: Buffer;
+        let m = 'image/jpeg';
+        const matches = item.dataUrl.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
+        if (matches) {
+          m = matches[1];
+          b = Buffer.from(matches[2], 'base64');
+        } else {
+          b = Buffer.from(item.dataUrl, 'base64');
+        }
+
+        const saved = await saveImageFile(b, item.name);
+        savedFaces.push({
+          face: (item.face || 'FRONT').toUpperCase(),
+          imagePath: saved.publicUrl,
+          name: item.name || `${item.face} Face`,
+          buffer: b,
+          mimeType: m,
+        });
+      }
+
+      imageBuffer = savedFaces[0].buffer;
+      mimeType = savedFaces[0].mimeType;
+      packageFace = savedFaces[0].face;
     }
 
-    // 1. Save image to local public/uploads
-    const saved = await saveImageFile(imageBuffer, originalFilename);
-
-    // 2. OCR & Structured Extraction
-    const extractedData = await extractProductData(imageBuffer, {
-      mimeType,
+    // 2. OCR & Structured Extraction across submitted faces
+    const primaryFace = savedFaces[0];
+    const extractedData = await extractProductData(primaryFace.buffer, {
+      mimeType: primaryFace.mimeType,
       contextMetadata: {
         productName: productName || undefined,
         category,
@@ -103,6 +157,64 @@ export async function POST(req: NextRequest) {
         countryOfOrigin,
       },
     });
+
+    // Tag primary bounding boxes with primary face
+    Object.keys(extractedData.boundingBoxes || {}).forEach((k) => {
+      if (extractedData.boundingBoxes[k]) {
+        extractedData.boundingBoxes[k].face = primaryFace.face.toLowerCase();
+      }
+    });
+
+    // If secondary images (e.g. BACK face) were submitted, extract and merge declarations
+    if (savedFaces.length > 1) {
+      for (let i = 1; i < savedFaces.length; i++) {
+        try {
+          const secFace = savedFaces[i];
+          const secExtracted = await extractProductData(secFace.buffer, {
+            mimeType: secFace.mimeType,
+            contextMetadata: {
+              productName: productName || undefined,
+              category,
+              isImported,
+              countryOfOrigin,
+            },
+          });
+
+          // Merge fields if missing in primary extraction
+          if (!extractedData.manufacturer && secExtracted.manufacturer) {
+            extractedData.manufacturer = secExtracted.manufacturer;
+            extractedData.address = secExtracted.address;
+            extractedData.pincode = secExtracted.pincode;
+          }
+          if (!extractedData.consumerCare?.phone && secExtracted.consumerCare?.phone) {
+            extractedData.consumerCare = secExtracted.consumerCare;
+          }
+          if (!extractedData.manufacturingDate?.formatted && secExtracted.manufacturingDate?.formatted) {
+            extractedData.manufacturingDate = secExtracted.manufacturingDate;
+          }
+          if (!extractedData.mrp?.value && secExtracted.mrp?.value) {
+            extractedData.mrp = secExtracted.mrp;
+          }
+          if (!extractedData.netQuantity?.value && secExtracted.netQuantity?.value) {
+            extractedData.netQuantity = secExtracted.netQuantity;
+          }
+
+          // Merge bounding boxes tagged with this face
+          Object.keys(secExtracted.boundingBoxes || {}).forEach((k) => {
+            if (!extractedData.boundingBoxes[k]) {
+              extractedData.boundingBoxes[k] = {
+                ...secExtracted.boundingBoxes[k],
+                face: secFace.face.toLowerCase(),
+              };
+            }
+          });
+
+          extractedData.rawOcrText = `${extractedData.rawOcrText}\n--- ${secFace.face} FACE ---\n${secExtracted.rawOcrText}`;
+        } catch (secErr) {
+          console.warn(`Extraction note for secondary face ${savedFaces[i].face}:`, secErr);
+        }
+      }
+    }
 
     // 3. Legal Metrology Rule Engine
     const finalProductName = productName || extractedData.productName || 'Scanned Packaged Commodity';
@@ -115,7 +227,13 @@ export async function POST(req: NextRequest) {
 
     // 4. Save analysis record in database
     const scanId = crypto.randomUUID();
-    complianceResult.scan_id = undefined; // DB generates or assigns scanId
+    complianceResult.scan_id = undefined;
+
+    const faceRecords = savedFaces.map((f) => ({
+      face: f.face,
+      imagePath: f.imagePath,
+      name: f.name,
+    }));
 
     const scanRecord = createScan({
       id: scanId,
@@ -124,8 +242,8 @@ export async function POST(req: NextRequest) {
       category,
       isImported,
       countryOfOrigin,
-      imagePath: saved.publicUrl,
-      packageFaces: [packageFace],
+      imagePath: savedFaces[0].imagePath,
+      packageFaces: faceRecords as any,
       rawOcrText: extractedData.rawOcrText,
       extractedData,
       complianceResult,
@@ -139,7 +257,9 @@ export async function POST(req: NextRequest) {
       scanId: scanRecord.id,
       productName: finalProductName,
       category,
-      imagePath: saved.publicUrl,
+      imagePath: savedFaces[0].imagePath,
+      package_faces: faceRecords,
+      images: faceRecords,
       extractedData,
       complianceResult,
       overallStatus: complianceResult.overall_status,

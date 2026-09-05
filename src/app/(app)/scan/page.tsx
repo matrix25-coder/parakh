@@ -224,6 +224,12 @@ export default function ScanProductPage() {
           face: 'FRONT',
           name: 'Amrit_Ghee_Front_PDP.jpg',
         },
+        {
+          id: 'preset-back-1',
+          dataUrl: createPackageCanvasDataUrl('Amrit Pure Cow Ghee - Information Panel', '500 ml', 'Batch #AG-2026', 'BACK PANEL • MFD BY AMRIT FOODS PUNE • FSSAI 10014022002890', '#15803D'),
+          face: 'BACK',
+          name: 'Amrit_Ghee_Back_Panel.jpg',
+        },
       ]);
     } else if (type === 'violation') {
       setProductName('NutriBite Butter Crisp Biscuits 120g');
@@ -235,7 +241,13 @@ export default function ScanProductPage() {
           id: 'preset-front-2',
           dataUrl: createPackageCanvasDataUrl('NutriBite Butter Crisp 120g', '120 gms', 'Rs. 35.00 only', 'FAIL • RULE 6(1)(e) & TABLE I DEFECTS', '#B91C1C'),
           face: 'FRONT',
-          name: 'NutriBite_Violation_Pack.jpg',
+          name: 'NutriBite_Front_PDP.jpg',
+        },
+        {
+          id: 'preset-back-2',
+          dataUrl: createPackageCanvasDataUrl('NutriBite Crisp - Back Panel', '120 gms', 'Rs. 35.00', 'BACK PANEL • MISSING PROPER UNIT & TAX INCLUSIVITY', '#B91C1C'),
+          face: 'BACK',
+          name: 'NutriBite_Back_Panel.jpg',
         },
       ]);
     } else {
@@ -248,7 +260,13 @@ export default function ScanProductPage() {
           id: 'preset-front-3',
           dataUrl: createPackageCanvasDataUrl('Alpine Glacial Water 750ml', '750 ml', '₹120.00 (Incl. taxes)', 'NEEDS_REVIEW • LOW CONTRAST OCR', '#B45309'),
           face: 'FRONT',
-          name: 'Alpine_Water_Imported.jpg',
+          name: 'Alpine_Water_Front_PDP.jpg',
+        },
+        {
+          id: 'preset-back-3',
+          dataUrl: createPackageCanvasDataUrl('Alpine Glacial Water - Importer Panel', '750 ml', 'Imp: Himalayan Springs Ltd', 'BACK PANEL • IMPORTER & ORIGIN BHUTAN', '#B45309'),
+          face: 'BACK',
+          name: 'Alpine_Water_Back_Panel.jpg',
         },
       ]);
     }
@@ -258,20 +276,27 @@ export default function ScanProductPage() {
     if (images.length === 0) return;
     setIsExtracting(true);
     setScanError(null);
-    setScanProgressStage('Uploading packaged commodity image...');
+    setScanProgressStage('Uploading packaged commodity images...');
 
     try {
-      setScanProgressStage('Extracting declarations via optical models...');
+      setScanProgressStage(`Extracting declarations from ${images.length} package face(s)...`);
+      const payloadImages = images.map((img) => ({
+        dataUrl: img.dataUrl,
+        face: img.face,
+        name: img.name,
+      }));
+
       const res = await fetch('/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          images: payloadImages,
           image: images[0].dataUrl,
+          face: images[0].face,
           productName,
           category,
           isImported,
           countryOfOrigin,
-          face: images[0].face,
         }),
       });
 
