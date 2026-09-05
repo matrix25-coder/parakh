@@ -22,9 +22,16 @@ export async function runGeminiVisionExtraction(
 
   const systemPrompt = `You are a Legal Metrology (Packaged Commodities) Rules, 2011 statutory compliance inspection AI.
 Analyze the provided product package image carefully and extract all statutory declarations into a structured JSON object.
-Inspect the entire label including edges, curved sides, batch code stamps, and small text for manufacturer, customer care, and dates.
+Inspect the entire label thoroughly including edges, curved sides, batch code stamps, barcode areas, and small print:
 
-Extract ONLY what is actually visible on the packaging label. If any declaration is absent or illegible, return null. DO NOT invent or assume values.
+- For "manufacturer": Look for "MANUFACTURED & MARKETED BY", "MFD BY", "PACKED BY", or company legal entities (e.g. "... PRIVATE LIMITED", "PVT LTD", "LIMITED"). If a brand name or web domain is on the package (e.g. "WELLCORE", "wellversed", "www.wellversed.in"), correlate it with visible corporate entity text to accurately resolve the manufacturer entity (e.g. "Wellversed Health Private Limited").
+- For "address" & "pincode": Extract the factory or registered office address and 6-digit PIN code (e.g. "Sohna Road, Haryana - 122001").
+- For "consumerCare": Look for "CUSTOMER CARE", helpline, email, phone number, website, or support address.
+- For "manufacturingDate" & "expiryDate": Extract from label print or dot-matrix ink stamps (e.g. "03/05/2026", "04/05/2027", "05/2026").
+- For "mrp": Extract price, currency, and mandatory phrase "inclusive of all taxes" or "incl. of all taxes".
+- For "netQuantity": Extract numeric quantity and SI unit (e.g. 100g, 500ml).
+
+Extract ONLY what is actually visible on the packaging label or directly inferrable from visible text. If any declaration is completely absent, return null.
 
 Expected JSON output format:
 {

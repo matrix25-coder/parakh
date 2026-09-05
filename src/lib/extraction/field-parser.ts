@@ -187,7 +187,7 @@ function parseNetQuantity(text: string): NetQuantityDeclaration {
 
 function parseManufacturingDate(text: string): DateDeclaration {
   // Regex for Mfg / Pkd date (MM/YYYY, MM/YY, or Month YYYY)
-  const dateKeywordRegex = /(?:mfd|pkd|mfg|packed|pack\s*date|mfg\s*date|date\s*of\s*mfg|date\s*of\s*pkg)[\s:.]*([0-1]?[0-9][\/\-.][1-2][0-9]{3}|[0-1]?[0-9][\/\-.][0-9]{2}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s,.'-]+[1-2][0-9]{3})/i;
+  const dateKeywordRegex = /(?:mfd|pkd|mfg|packed|pack\s*date|mfg\s*date|date\s*of\s*mfg|date\s*of\s*pkg)[\s:.]*([0-3]?[0-9][\/\-.][0-1]?[0-9][\/\-.][1-2][0-9]{3}|[0-1]?[0-9][\/\-.][1-2][0-9]{3}|[0-1]?[0-9][\/\-.][0-9]{2}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s,.'-]+[1-2][0-9]{3})/i;
   const match = text.match(dateKeywordRegex);
 
   if (match) {
@@ -196,6 +196,17 @@ function parseManufacturingDate(text: string): DateDeclaration {
     if (slashParts.length === 2) {
       const month = parseInt(slashParts[0], 10);
       let year = parseInt(slashParts[1], 10);
+      if (year < 100) year += 2000;
+      return {
+        month: month >= 1 && month <= 12 ? month : null,
+        year: year >= 2000 && year <= 2050 ? year : null,
+        raw: match[0],
+        formatted: `${String(month).padStart(2, '0')}/${year}`,
+        isCompliantFormat: true,
+      };
+    } else if (slashParts.length === 3) {
+      const month = parseInt(slashParts[1], 10);
+      let year = parseInt(slashParts[2], 10);
       if (year < 100) year += 2000;
       return {
         month: month >= 1 && month <= 12 ? month : null,
@@ -215,7 +226,20 @@ function parseManufacturingDate(text: string): DateDeclaration {
     };
   }
 
-  // Standalone date regex like 07/2026
+  // Standalone date regex like 03/05/2026 or 07/2026
+  const standalone3Part = /\b[0-3]?[0-9][\/\-.](0[1-9]|1[0-2])[\/\-.](20[2-3][0-9])\b/.exec(text);
+  if (standalone3Part) {
+    const month = parseInt(standalone3Part[1], 10);
+    const year = parseInt(standalone3Part[2], 10);
+    return {
+      month,
+      year,
+      raw: standalone3Part[0],
+      formatted: `${standalone3Part[1]}/${standalone3Part[2]}`,
+      isCompliantFormat: true,
+    };
+  }
+
   const standaloneDate = /\b(0[1-9]|1[0-2])[\/\-](20[2-3][0-9])\b/.exec(text);
   if (standaloneDate) {
     return {
@@ -231,13 +255,22 @@ function parseManufacturingDate(text: string): DateDeclaration {
 }
 
 function parseExpiryDate(text: string) {
-  const expiryRegex = /(?:use\s*by|exp(?:iry)?|best\s*before)[\s:.]*([0-1]?[0-9][\/\-.][1-2][0-9]{3}|[0-1]?[0-9][\/\-.][0-9]{2}|[0-9]+\s*(?:months?|days?|years?)\s*(?:from\s*(?:mfg|pkd|packaging))?)/i;
+  const expiryRegex = /(?:use\s*by|exp(?:iry)?|best\s*before|expiry\s*date)[\s:.]*([0-3]?[0-9][\/\-.][0-1]?[0-9][\/\-.][1-2][0-9]{3}|[0-1]?[0-9][\/\-.][1-2][0-9]{3}|[0-1]?[0-9][\/\-.][0-9]{2}|[0-9]+\s*(?:months?|days?|years?)\s*(?:from\s*(?:mfg|pkd|packaging))?)/i;
   const match = text.match(expiryRegex);
 
   if (match) {
     return {
       raw: match[0],
       expiryFormatted: match[1],
+    };
+  }
+
+  // Standalone expiry like EXP 04/05/2027
+  const standaloneExp = /\bexp(?:iry)?[\s:.]*([0-3]?[0-9][\/\-.][0-1]?[0-9][\/\-.][1-2][0-9]{3}|[0-1]?[0-9][\/\-.][1-2][0-9]{3})\b/i.exec(text);
+  if (standaloneExp) {
+    return {
+      raw: standaloneExp[0],
+      expiryFormatted: standaloneExp[1],
     };
   }
 

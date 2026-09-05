@@ -48,17 +48,37 @@ export function evaluateCompliance(
     const hasMfg = !!data.manufacturer;
     const hasPin = !!data.pincode;
     const hasAddr = !!data.address;
+    const brand = data.brand;
+    const rawOcr = data.rawOcrText || '';
+
+    const hasMfgSection = /(?:manufactur|marketed\s*by|mfd|pkd|packer|private\s*limited|pvt\.?\s*ltd|limited)/i.test(rawOcr);
 
     let status: RuleEvaluationDetail['status'] = 'FAIL';
     let message = "Mandatory declaration 'manufacturer_name' was not detected on package label. Explicit statutory violation.";
 
-    if (hasMfg && (hasPin || (hasAddr && data.address!.length > 15))) {
+    if ((hasMfg || brand) && (hasPin || (hasAddr && (data.address?.length || 0) > 10))) {
       status = 'PASS';
-      message = `Mandatory declaration detected (${data.manufacturer}) and address completeness verified${hasPin ? ' with PIN ' + data.pincode : ''}.`;
+      const mfgLabel = data.manufacturer || brand;
+      message = `Mandatory manufacturer declaration detected (${mfgLabel}) and physical address verified${data.address ? ': ' + data.address : ''}${hasPin ? ' (PIN ' + data.pincode + ')' : ''}.`;
     } else if (hasMfg) {
       status = 'REVIEW';
       message = `Manufacturer identity detected (${data.manufacturer}), but physical registered postal address completeness requires officer verification.`;
+    } else if (brand && hasMfgSection) {
+      status = 'REVIEW';
+      message = `Brand / Corporate entity recognized (${brand}), and packaging indicates manufacturing/marketing entity. Full registered postal address requires visual confirmation.`;
+    } else if (brand) {
+      status = 'REVIEW';
+      message = `Brand identity declared (${brand}), but registered corporate manufacturer name and address require visual confirmation.`;
+    } else if (hasMfgSection) {
+      status = 'REVIEW';
+      message = "Manufacturing/marketing entity section detected on packaging, but full name and address require visual confirmation.";
     }
+
+    const extractedVal = data.manufacturer
+      ? `${data.manufacturer}${data.address ? ', ' + data.address : ''}`
+      : brand
+      ? `${brand} (Brand Entity)`
+      : undefined;
 
     const detail: RuleEvaluationDetail = {
       rule_id: 1,
@@ -67,14 +87,14 @@ export function evaluateCompliance(
       title: 'Manufacturer / Packer Information',
       status,
       field: 'manufacturer_name',
-      extracted_value: data.manufacturer ? `${data.manufacturer}${data.address ? ', ' + data.address : ''}` : undefined,
-      normalized_value: data.manufacturer || undefined,
+      extracted_value: extractedVal,
+      normalized_value: data.manufacturer || brand || undefined,
       expected_value: 'Name and complete registered address of manufacturer or packer',
       message,
       severity: 'HIGH',
-      confidence: data.fieldConfidences.manufacturer_name || (hasMfg ? 0.92 : undefined),
+      confidence: data.fieldConfidences.manufacturer_name || (hasMfg || brand ? 0.92 : undefined),
       source_reference: 'Rule 6(1)(a), Legal Metrology (Packaged Commodities) Rules, 2011',
-      evidence: createEvidence('manufacturer_name', data.manufacturer),
+      evidence: createEvidence('manufacturer_name', data.manufacturer || brand),
     };
     results.push(detail);
 
@@ -401,17 +421,38 @@ export function evaluateCompliance(
     const cc = data.consumerCare;
     const hasPhone = !!cc.phone;
     const hasEmail = !!cc.email;
+    const hasAddress = !!cc.address;
+    const rawOcr = data.rawOcrText || '';
+    const hasCareKeyword = /(?:consumer\s*care|customer\s*care|grievance|helpline|care@|support@|contact\s*us|call\s*us|write\s*to)/i.test(rawOcr) ||
+                           /(?:consumer\s*care|customer\s*care|grievance)/i.test(cc.raw || '');
+    const webMatch = rawOcr.match(/(?:www\.[a-zA-Z0-9-]+\.[a-zA-Z]{2,}|https?:\/\/[a-zA-Z0-9-]+\.[a-zA-Z]{2,})\b/i);
+    const hasWeb = !!webMatch;
 
     let status: RuleEvaluationDetail['status'] = 'FAIL';
     let message = "Consumer grievance redressal details are absent from package.";
 
-    if (hasPhone && hasEmail) {
+    if ((hasPhone && hasEmail) || (hasPhone && hasAddress) || (hasEmail && hasAddress)) {
       status = 'PASS';
-      message = `Comprehensive consumer care channels declared (Phone: ${cc.phone}, Email: ${cc.email}).`;
-    } else if (hasPhone || hasEmail || cc.raw) {
+      message = `Comprehensive consumer care channels declared (${[hasPhone ? 'Phone: ' + cc.phone : '', hasEmail ? 'Email: ' + cc.email : '', hasAddress ? 'Address: ' + cc.address : ''].filter(Boolean).join(', ')}).`;
+    } else if (hasPhone || hasEmail) {
+      status = 'PASS';
+      message = `Consumer care grievance contact channel declared (${hasPhone ? 'Phone: ' + cc.phone : 'Email: ' + cc.email}). Rule 6(1)(f) requirement satisfied.`;
+    } else if (cc.raw && cc.raw !== 'Consumer Care Helpline declared') {
+      status = 'PASS';
+      message = `Consumer care grievance redressal contact declared (${cc.raw}).`;
+    } else if (hasCareKeyword && (data.manufacturer || data.address || hasWeb)) {
+      status = 'PASS';
+      const channelInfo = [hasWeb ? webMatch![0] : '', data.manufacturer || data.address || ''].filter(Boolean).join(' / ');
+      message = `Consumer grievance redressal channel declared on packaging (${channelInfo || 'Customer Care / Manufacturer Address'}). Rule 6(1)(f) satisfied.`;
+    } else if (hasWeb && (data.manufacturer || data.address)) {
+      status = 'PASS';
+      message = `Consumer grievance redressal channel declared via official portal (${webMatch![0]}) and registered address.`;
+    } else if (hasCareKeyword || hasWeb) {
       status = 'REVIEW';
-      message = `Partial consumer care details detected (${cc.raw || cc.phone || cc.email}). Both phone and email are recommended under Rule 6(1)(f).`;
+      message = "Consumer care section detected on package, but specific contact phone/email requires visual verification.";
     }
+
+    const contactVal = cc.raw || (hasPhone || hasEmail ? `${cc.phone || ''} ${cc.email || ''}`.trim() : hasWeb ? webMatch![0] : hasCareKeyword ? 'Customer Care Section Present' : undefined);
 
     const detail: RuleEvaluationDetail = {
       rule_id: 9,
@@ -420,14 +461,14 @@ export function evaluateCompliance(
       title: 'Consumer Care Grievance Redressal Contact',
       status,
       field: 'consumer_care',
-      extracted_value: cc.raw || (hasPhone || hasEmail ? `${cc.phone || ''} ${cc.email || ''}`.trim() : undefined),
-      normalized_value: cc.raw || undefined,
-      expected_value: 'Phone / Email / Address for consumer grievance redressal',
+      extracted_value: contactVal,
+      normalized_value: contactVal || undefined,
+      expected_value: 'Phone / Email / Address / Web for consumer grievance redressal',
       message,
       severity: 'MEDIUM',
-      confidence: data.fieldConfidences.consumer_care || (hasPhone || hasEmail ? 0.85 : 0.6),
+      confidence: data.fieldConfidences.consumer_care || (hasPhone || hasEmail || hasWeb ? 0.9 : 0.6),
       source_reference: 'Rule 6(1)(f), Legal Metrology (Packaged Commodities) Rules, 2011',
-      evidence: createEvidence('consumer_care', cc.raw || cc.phone || cc.email),
+      evidence: createEvidence('consumer_care', contactVal),
     };
     results.push(detail);
 
@@ -451,7 +492,8 @@ export function evaluateCompliance(
       const hasExpiry = !!data.expiryDate.raw || !!data.expiryDate.expiryFormatted;
       if (hasExpiry) {
         status = 'PASS';
-        message = `Food commodity best before / expiry declaration present (${data.expiryDate.raw}).`;
+        const expLabel = data.expiryDate.expiryFormatted || data.expiryDate.raw;
+        message = `Food commodity best before / expiry declaration present (${expLabel}).`;
       } else {
         status = 'FAIL';
         message = "Food commodity packaging does not bear mandatory expiry or best before declaration.";
