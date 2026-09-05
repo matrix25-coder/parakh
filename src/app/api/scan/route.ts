@@ -186,11 +186,17 @@ export async function POST(req: NextRequest) {
             extractedData.address = secExtracted.address;
             extractedData.pincode = secExtracted.pincode;
           }
-          if (!extractedData.consumerCare?.phone && secExtracted.consumerCare?.phone) {
+          if (
+            (!extractedData.consumerCare?.phone && !extractedData.consumerCare?.email && !extractedData.consumerCare?.raw) &&
+            (secExtracted.consumerCare?.phone || secExtracted.consumerCare?.email || secExtracted.consumerCare?.raw)
+          ) {
             extractedData.consumerCare = secExtracted.consumerCare;
           }
           if (!extractedData.manufacturingDate?.formatted && secExtracted.manufacturingDate?.formatted) {
             extractedData.manufacturingDate = secExtracted.manufacturingDate;
+          }
+          if (!extractedData.expiryDate?.expiryFormatted && (secExtracted.expiryDate?.expiryFormatted || secExtracted.expiryDate?.raw)) {
+            extractedData.expiryDate = secExtracted.expiryDate;
           }
           if (!extractedData.mrp?.value && secExtracted.mrp?.value) {
             extractedData.mrp = secExtracted.mrp;

@@ -22,6 +22,7 @@ export async function runGeminiVisionExtraction(
 
   const systemPrompt = `You are a Legal Metrology (Packaged Commodities) Rules, 2011 statutory compliance inspection AI.
 Analyze the provided product package image carefully and extract all statutory declarations into a structured JSON object.
+Inspect the entire label including edges, curved sides, batch code stamps, and small text for manufacturer, customer care, and dates.
 
 Extract ONLY what is actually visible on the packaging label. If any declaration is absent or illegible, return null. DO NOT invent or assume values.
 
@@ -78,14 +79,15 @@ Expected JSON output format:
     "country_of_origin": number
   },
   "boundingBoxes": {
-    "manufacturer_name": { "top": number, "left": number, "width": number, "height": number },
-    "commodity_description": { "top": number, "left": number, "width": number, "height": number },
-    "net_quantity": { "top": number, "left": number, "width": number, "height": number },
-    "mrp": { "top": number, "left": number, "width": number, "height": number },
-    "month_year": { "top": number, "left": number, "width": number, "height": number },
-    "consumer_care": { "top": number, "left": number, "width": number, "height": number }
+    "manufacturer_name": { "top": number (0-100), "left": number (0-100), "width": number (0-100), "height": number (0-100) },
+    "commodity_description": { "top": number (0-100), "left": number (0-100), "width": number (0-100), "height": number (0-100) },
+    "net_quantity": { "top": number (0-100), "left": number (0-100), "width": number (0-100), "height": number (0-100) },
+    "mrp": { "top": number (0-100), "left": number (0-100), "width": number (0-100), "height": number (0-100) },
+    "month_year": { "top": number (0-100), "left": number (0-100), "width": number (0-100), "height": number (0-100) },
+    "consumer_care": { "top": number (0-100), "left": number (0-100), "width": number (0-100), "height": number (0-100) }
   }
 }
+Note: all bounding box numbers MUST be percentages between 0 and 100.
 Return ONLY valid raw JSON, with no markdown code blocks or commentary.`;
 
   // Supported Gemini Multimodal Vision Models in priority order (fastest first)
@@ -160,6 +162,21 @@ Return ONLY valid raw JSON, with no markdown code blocks or commentary.`;
   }
 
   const parsed = JSON.parse(cleanJson) as StructuredProductData;
+
+  // Normalize bounding box coordinates to 0-100 percentage
+  if (parsed.boundingBoxes) {
+    for (const key of Object.keys(parsed.boundingBoxes)) {
+      const box = (parsed.boundingBoxes as any)[key];
+      if (box && typeof box === 'object') {
+        if (box.top > 100 || box.left > 100 || box.width > 100 || box.height > 100) {
+          box.top = Math.round((box.top / 10) * 10) / 10;
+          box.left = Math.round((box.left / 10) * 10) / 10;
+          box.width = Math.round((box.width / 10) * 10) / 10;
+          box.height = Math.round((box.height / 10) * 10) / 10;
+        }
+      }
+    }
+  }
 
   // Apply context overrides if provided
   if (contextMetadata?.productName && !parsed.productName) {
