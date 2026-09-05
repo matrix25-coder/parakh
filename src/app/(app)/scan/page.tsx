@@ -95,7 +95,7 @@ export default function ScanProductPage() {
     }
   };
 
-  const optimizeImageForInspection = (dataUrl: string, maxDimension = 1400, quality = 0.85): Promise<string> => {
+  const optimizeImageForInspection = (dataUrl: string, maxDimension = 1200, quality = 0.75): Promise<string> => {
     return new Promise((resolve) => {
       if (typeof window === 'undefined') {
         resolve(dataUrl);
@@ -105,7 +105,7 @@ export default function ScanProductPage() {
       img.onload = () => {
         let width = img.width;
         let height = img.height;
-        if (width <= maxDimension && height <= maxDimension && dataUrl.length < 500 * 1024) {
+        if (width <= maxDimension && height <= maxDimension && dataUrl.length < 150 * 1024) {
           resolve(dataUrl);
           return;
         }
@@ -291,8 +291,6 @@ export default function ScanProductPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           images: payloadImages,
-          image: images[0].dataUrl,
-          face: images[0].face,
           productName,
           category,
           isImported,
@@ -300,10 +298,22 @@ export default function ScanProductPage() {
         }),
       });
 
-      const data = await res.json();
+      const resText = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(resText);
+      } catch {
+        if (res.status === 413) {
+          throw new Error('Image size exceeded server limit (413). Please take a photo from slightly further away.');
+        } else if (res.status === 504) {
+          throw new Error('Analysis timed out on Vercel (504). Please try again.');
+        } else {
+          throw new Error(`Server returned error (${res.status}): ${resText.slice(0, 140) || 'Unknown server response'}`);
+        }
+      }
 
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to process packaged commodity scan.');
+        throw new Error(data.error || `Failed to process packaged commodity scan (${res.status}).`);
       }
 
       setScanProgressStage('Evaluating Legal Metrology rules...');

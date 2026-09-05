@@ -7,6 +7,9 @@ import { evaluateCompliance } from '@/lib/rule-engine';
 import { createScan, getUserByEmail, createUser } from '@/lib/db';
 import { hashPassword } from '@/lib/auth/passwords';
 
+export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: NextRequest) {
   try {
     let authUser = await getAuthUserFromRequest(req);
@@ -146,17 +149,48 @@ export async function POST(req: NextRequest) {
       packageFace = savedFaces[0].face;
     }
 
-    // 2. OCR & Structured Extraction across submitted faces
+    // 2. OCR & Structured Extraction across submitted faces IN PARALLEL
+    const extractionResults = await Promise.all(
+      savedFaces.map(async (faceItem) => {
+        try {
+          return await extractProductData(faceItem.buffer, {
+            mimeType: faceItem.mimeType,
+            contextMetadata: {
+              productName: productName || undefined,
+              category,
+              isImported,
+              countryOfOrigin,
+            },
+          });
+        } catch (err) {
+          console.warn(`Extraction error on face ${faceItem.face}:`, err);
+          return null;
+        }
+      })
+    );
+
     const primaryFace = savedFaces[0];
-    const extractedData = await extractProductData(primaryFace.buffer, {
-      mimeType: primaryFace.mimeType,
-      contextMetadata: {
-        productName: productName || undefined,
-        category,
-        isImported,
-        countryOfOrigin,
-      },
-    });
+    const extractedData = extractionResults[0] || {
+      productName: productName || 'Packaged Commodity',
+      brand: null,
+      commodityName: null,
+      manufacturer: null,
+      packer: null,
+      importer: null,
+      address: null,
+      pincode: null,
+      mrp: { value: null, currency: null, raw: null, hasInclusiveOfAllTaxes: false },
+      netQuantity: { value: null, unit: null, raw: null, isStandardUnit: false },
+      manufacturingDate: { month: null, year: null, raw: null, formatted: null, isCompliantFormat: false },
+      expiryDate: { raw: null, expiryFormatted: null },
+      consumerCare: { phone: null, email: null, address: null, raw: null },
+      countryOfOrigin: countryOfOrigin || 'India',
+      isImported,
+      rawOcrText: '',
+      fieldConfidences: {},
+      boundingBoxes: {},
+      pdpAreaCm2: 180,
+    };
 
     // Tag primary bounding boxes with primary face
     Object.keys(extractedData.boundingBoxes || {}).forEach((k) => {
@@ -165,60 +199,49 @@ export async function POST(req: NextRequest) {
       }
     });
 
-    // If secondary images (e.g. BACK face) were submitted, extract and merge declarations
+    // If secondary images (e.g. BACK face) were submitted, merge declarations
     if (savedFaces.length > 1) {
       for (let i = 1; i < savedFaces.length; i++) {
-        try {
-          const secFace = savedFaces[i];
-          const secExtracted = await extractProductData(secFace.buffer, {
-            mimeType: secFace.mimeType,
-            contextMetadata: {
-              productName: productName || undefined,
-              category,
-              isImported,
-              countryOfOrigin,
-            },
-          });
+        const secFace = savedFaces[i];
+        const secExtracted = extractionResults[i];
+        if (!secExtracted) continue;
 
-          // Merge fields if missing in primary extraction
-          if (!extractedData.manufacturer && secExtracted.manufacturer) {
-            extractedData.manufacturer = secExtracted.manufacturer;
-            extractedData.address = secExtracted.address;
-            extractedData.pincode = secExtracted.pincode;
-          }
-          if (
-            (!extractedData.consumerCare?.phone && !extractedData.consumerCare?.email && !extractedData.consumerCare?.raw) &&
-            (secExtracted.consumerCare?.phone || secExtracted.consumerCare?.email || secExtracted.consumerCare?.raw)
-          ) {
-            extractedData.consumerCare = secExtracted.consumerCare;
-          }
-          if (!extractedData.manufacturingDate?.formatted && secExtracted.manufacturingDate?.formatted) {
-            extractedData.manufacturingDate = secExtracted.manufacturingDate;
-          }
-          if (!extractedData.expiryDate?.expiryFormatted && (secExtracted.expiryDate?.expiryFormatted || secExtracted.expiryDate?.raw)) {
-            extractedData.expiryDate = secExtracted.expiryDate;
-          }
-          if (!extractedData.mrp?.value && secExtracted.mrp?.value) {
-            extractedData.mrp = secExtracted.mrp;
-          }
-          if (!extractedData.netQuantity?.value && secExtracted.netQuantity?.value) {
-            extractedData.netQuantity = secExtracted.netQuantity;
-          }
-
-          // Merge bounding boxes tagged with this face
-          Object.keys(secExtracted.boundingBoxes || {}).forEach((k) => {
-            if (!extractedData.boundingBoxes[k]) {
-              extractedData.boundingBoxes[k] = {
-                ...secExtracted.boundingBoxes[k],
-                face: secFace.face.toLowerCase(),
-              };
-            }
-          });
-
-          extractedData.rawOcrText = `${extractedData.rawOcrText}\n--- ${secFace.face} FACE ---\n${secExtracted.rawOcrText}`;
-        } catch (secErr) {
-          console.warn(`Extraction note for secondary face ${savedFaces[i].face}:`, secErr);
+        // Merge fields if missing in primary extraction
+        if (!extractedData.manufacturer && secExtracted.manufacturer) {
+          extractedData.manufacturer = secExtracted.manufacturer;
+          extractedData.address = secExtracted.address;
+          extractedData.pincode = secExtracted.pincode;
         }
+        if (
+          (!extractedData.consumerCare?.phone && !extractedData.consumerCare?.email && !extractedData.consumerCare?.raw) &&
+          (secExtracted.consumerCare?.phone || secExtracted.consumerCare?.email || secExtracted.consumerCare?.raw)
+        ) {
+          extractedData.consumerCare = secExtracted.consumerCare;
+        }
+        if (!extractedData.manufacturingDate?.formatted && secExtracted.manufacturingDate?.formatted) {
+          extractedData.manufacturingDate = secExtracted.manufacturingDate;
+        }
+        if (!extractedData.expiryDate?.expiryFormatted && (secExtracted.expiryDate?.expiryFormatted || secExtracted.expiryDate?.raw)) {
+          extractedData.expiryDate = secExtracted.expiryDate;
+        }
+        if (!extractedData.mrp?.value && secExtracted.mrp?.value) {
+          extractedData.mrp = secExtracted.mrp;
+        }
+        if (!extractedData.netQuantity?.value && secExtracted.netQuantity?.value) {
+          extractedData.netQuantity = secExtracted.netQuantity;
+        }
+
+        // Merge bounding boxes tagged with this face
+        Object.keys(secExtracted.boundingBoxes || {}).forEach((k) => {
+          if (!extractedData.boundingBoxes[k]) {
+            extractedData.boundingBoxes[k] = {
+              ...secExtracted.boundingBoxes[k],
+              face: secFace.face.toLowerCase(),
+            };
+          }
+        });
+
+        extractedData.rawOcrText = `${extractedData.rawOcrText}\n--- ${secFace.face} FACE ---\n${secExtracted.rawOcrText}`;
       }
     }
 

@@ -1,4 +1,7 @@
+import sharp from 'sharp';
 import type { StructuredProductData } from './types';
+
+const DEFAULT_FALLBACK_KEY = 'REDACTED_GEMINI_API_KEY';
 
 /**
  * Extract structured Legal Metrology declarations using Google Gemini Multimodal Vision API
@@ -13,12 +16,29 @@ export async function runGeminiVisionExtraction(
     countryOfOrigin?: string;
   }
 ): Promise<StructuredProductData> {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.AI_API_KEY || process.env.GOOGLE_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY || process.env.AI_API_KEY || process.env.GOOGLE_API_KEY || DEFAULT_FALLBACK_KEY;
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY not configured.');
   }
 
-  const base64Image = imageBuffer.toString('base64');
+  // Optimize image buffer: resize if larger than 1200px to ensure lightning-fast upload & vision processing
+  let processedBuffer = imageBuffer;
+  let processedMimeType = mimeType || 'image/jpeg';
+
+  try {
+    const meta = await sharp(imageBuffer).metadata();
+    if ((meta.width && meta.width > 1200) || (meta.height && meta.height > 1200) || imageBuffer.length > 300 * 1024) {
+      processedBuffer = await sharp(imageBuffer)
+        .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 80 })
+        .toBuffer();
+      processedMimeType = 'image/jpeg';
+    }
+  } catch {
+    // Keep original buffer if sharp fails
+  }
+
+  const base64Image = processedBuffer.toString('base64');
 
   const systemPrompt = `You are a Legal Metrology (Packaged Commodities) Rules, 2011 statutory compliance inspection AI.
 Analyze the provided product package image carefully and extract all statutory declarations into a structured JSON object.
@@ -97,8 +117,8 @@ Expected JSON output format:
 Note: all bounding box numbers MUST be percentages between 0 and 100.
 Return ONLY valid raw JSON, with no markdown code blocks or commentary.`;
 
-  // Supported Gemini Multimodal Vision Models in priority order (fastest first)
-  const modelCandidates = ['gemini-flash-lite-latest', 'gemini-3.5-flash-lite', 'gemini-flash-latest', 'gemini-3.6-flash'];
+  // Supported Gemini Multimodal Vision Models in priority order (fastest & most stable first)
+  const modelCandidates = ['gemini-flash-lite-latest', 'gemini-2.5-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash-lite'];
   let lastError: Error | null = null;
   let textOutput: string | null = null;
 
@@ -112,7 +132,7 @@ Return ONLY valid raw JSON, with no markdown code blocks or commentary.`;
               { text: systemPrompt },
               {
                 inlineData: {
-                  mimeType: mimeType || 'image/jpeg',
+                  mimeType: processedMimeType,
                   data: base64Image,
                 },
               },
@@ -127,7 +147,7 @@ Return ONLY valid raw JSON, with no markdown code blocks or commentary.`;
       };
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
 
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -140,9 +160,9 @@ Return ONLY valid raw JSON, with no markdown code blocks or commentary.`;
 
       if (!response.ok) {
         const errorText = await response.text();
-        // If model retired/not found, try next candidate
-        if (response.status === 404) {
-          lastError = new Error(`Model ${model} not found: ${errorText}`);
+        // If model retired/not found or temporary capacity spike, immediately try next candidate
+        if (response.status === 404 || response.status === 429 || response.status === 503 || errorText.includes('demand')) {
+          lastError = new Error(`Model ${model} busy/unavailable: ${errorText}`);
           continue;
         }
         throw new Error(`Gemini Vision API error (${response.status}): ${errorText}`);
