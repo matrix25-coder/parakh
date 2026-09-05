@@ -6,7 +6,7 @@ import { PageHeader, StatusBadge, DataTable, FilterBar } from '@/components/ui';
 import type { ComplianceStatus } from '@/lib/types';
 
 interface InspectionRecord {
-  id: number;
+  id: number | string;
   scan_id: string;
   product: string;
   category: string;
@@ -49,13 +49,13 @@ export default function InspectionsPage() {
     category: 'ALL',
   });
 
-  // Load newly scanned products & search history from localStorage
+  // Load newly scanned products from DB and search history from localStorage
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const storedScans = localStorage.getItem('parakh_inspections');
-        if (storedScans) {
-          const userScans: InspectionRecord[] = JSON.parse(storedScans);
+    fetch('/api/history')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.scans && Array.isArray(data.scans)) {
+          const userScans: InspectionRecord[] = data.scans;
           const seen = new Set<string>();
           const combined: InspectionRecord[] = [];
           [...userScans, ...DEFAULT_RECORDS].forEach((rec) => {
@@ -66,7 +66,11 @@ export default function InspectionsPage() {
           });
           setRecords(combined);
         }
+      })
+      .catch((err) => console.warn('Could not fetch DB history:', err));
 
+    if (typeof window !== 'undefined') {
+      try {
         const storedSearches = localStorage.getItem('parakh_search_history');
         if (storedSearches) {
           setSearchHistory(JSON.parse(storedSearches));

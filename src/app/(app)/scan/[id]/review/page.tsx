@@ -1,92 +1,148 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { PageHeader, ConfidenceBadge, FontAuditCard } from '@/components/ui';
-import { DEMO_REPORT, DEMO_FONT_AUDITS } from '@/lib/demo/fixtures';
+import { DEMO_FONT_AUDITS } from '@/lib/demo/fixtures';
+import type { FontReadabilityAudit } from '@/lib/types';
+
+interface FieldRow {
+  field_name: string;
+  label: string;
+  rule_ref: string;
+  value: string;
+  confidence: number;
+  source_image: string;
+  status: 'CONFIRMED' | 'REVIEW_REQUIRED' | 'MISSING';
+}
 
 export default function ExtractionReviewPage() {
   const params = useParams();
   const router = useRouter();
-  const id = params?.id || '1';
+  const id = (params?.id as string) || '1';
 
-  const [fields, setFields] = useState([
-    {
-      field_name: 'manufacturer_name',
-      label: 'Manufacturer / Packer Name & Address',
-      rule_ref: 'Rule 6(1)(a)',
-      value: 'NutriFoods India Pvt Ltd, Industrial Area, Pune 411018',
-      confidence: 0.98,
-      source_image: 'front_label.jpg',
-      status: 'CONFIRMED',
-    },
-    {
-      field_name: 'commodity_description',
-      label: 'Generic or Common Name of Commodity',
-      rule_ref: 'Rule 6(1)(b)',
-      value: 'Almond Butter Cookies',
-      confidence: 0.96,
-      source_image: 'front_label.jpg',
-      status: 'CONFIRMED',
-    },
-    {
-      field_name: 'net_quantity',
-      label: 'Net Quantity Declaration',
-      rule_ref: 'Rule 6(1)(c)',
-      value: '150',
-      confidence: 0.95,
-      source_image: 'front_label.jpg',
-      status: 'CONFIRMED',
-    },
-    {
-      field_name: 'unit',
-      label: 'Measurement Unit Symbol',
-      rule_ref: 'Rule 12 & Sch. II',
-      value: 'g',
-      confidence: 0.95,
-      source_image: 'front_label.jpg',
-      status: 'CONFIRMED',
-    },
-    {
-      field_name: 'mrp',
-      label: 'Maximum Retail Price (MRP)',
-      rule_ref: 'Rule 6(1)(e)',
-      value: '', // Missing in demo
-      confidence: 0.0,
-      source_image: 'front_label.jpg',
-      status: 'MISSING',
-    },
-    {
-      field_name: 'month_year',
-      label: 'Month & Year of Manufacture / Packing',
-      rule_ref: 'Rule 6(1)(d)',
-      value: '08/2026',
-      confidence: 0.92,
-      source_image: 'front_label.jpg',
-      status: 'CONFIRMED',
-    },
-    {
-      field_name: 'country_of_origin',
-      label: 'Country of Origin (Imported)',
-      rule_ref: 'Rule 6(1)(da)',
-      value: 'India (Domestic Commodity)',
-      confidence: 0.99,
-      source_image: 'front_label.jpg',
-      status: 'CONFIRMED',
-    },
-    {
-      field_name: 'consumer_care',
-      label: 'Consumer Care / Grievance Redressal Contact',
-      rule_ref: 'Rule 6(1)(f)',
-      value: 'Tel: 1800-222-333',
-      confidence: 0.72, // Below 0.90 -> flags REVIEW REQUIRED
-      source_image: 'back_label.jpg',
-      status: 'REVIEW_REQUIRED',
-    },
-  ]);
-
+  const [isLoading, setIsLoading] = useState(true);
+  const [productName, setProductName] = useState('Packaged Commodity');
+  const [category, setCategory] = useState('FOOD');
+  const [fontAudits, setFontAudits] = useState<FontReadabilityAudit[]>(DEMO_FONT_AUDITS);
+  const [fields, setFields] = useState<FieldRow[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setIsLoading(true);
+    fetch(`/api/scan/${id}`)
+      .then((res) => {
+        if (!res.ok) throw new Error('Scan not found');
+        return res.json();
+      })
+      .then((data) => {
+        setProductName(data.product_name || 'Packaged Commodity');
+        setCategory(data.category || 'FOOD');
+
+        if (data.complianceResult?.font_audits) {
+          setFontAudits(data.complianceResult.font_audits);
+        }
+
+        const ext = data.extractedData || {};
+        const conf = ext.fieldConfidences || {};
+
+        const mfgVal = ext.manufacturer
+          ? `${ext.manufacturer}${ext.address && !ext.manufacturer.includes(ext.address) ? ', ' + ext.address : ''}`
+          : '';
+        const commVal = ext.commodityName || data.product_name || '';
+        const qtyVal = ext.netQuantity?.value ? String(ext.netQuantity.value) : ext.netQuantity?.raw || '';
+        const unitVal = ext.netQuantity?.unit || '';
+        const mrpVal = ext.mrp?.raw || (ext.mrp?.value ? `₹ ${ext.mrp.value}` : '');
+        const dateVal = ext.manufacturingDate?.formatted || ext.manufacturingDate?.raw || '';
+        const originVal = ext.countryOfOrigin || (data.is_imported ? 'Imported' : 'India');
+        const ccVal = ext.consumerCare?.raw || (ext.consumerCare?.phone ? `Tel: ${ext.consumerCare.phone}` : '');
+
+        const rows: FieldRow[] = [
+          {
+            field_name: 'manufacturer_name',
+            label: 'Manufacturer / Packer Name & Address',
+            rule_ref: 'Rule 6(1)(a)',
+            value: mfgVal,
+            confidence: conf.manufacturer_name ?? (mfgVal ? 0.95 : 0.0),
+            source_image: 'front_label.jpg',
+            status: !mfgVal ? 'MISSING' : (conf.manufacturer_name && conf.manufacturer_name < 0.9 ? 'REVIEW_REQUIRED' : 'CONFIRMED'),
+          },
+          {
+            field_name: 'commodity_description',
+            label: 'Generic or Common Name of Commodity',
+            rule_ref: 'Rule 6(1)(b)',
+            value: commVal,
+            confidence: conf.commodity_description ?? (commVal ? 0.95 : 0.0),
+            source_image: 'front_label.jpg',
+            status: !commVal ? 'MISSING' : 'CONFIRMED',
+          },
+          {
+            field_name: 'net_quantity',
+            label: 'Net Quantity Declaration',
+            rule_ref: 'Rule 6(1)(c)',
+            value: qtyVal,
+            confidence: conf.net_quantity ?? (qtyVal ? 0.95 : 0.0),
+            source_image: 'front_label.jpg',
+            status: !qtyVal ? 'MISSING' : 'CONFIRMED',
+          },
+          {
+            field_name: 'unit',
+            label: 'Measurement Unit Symbol',
+            rule_ref: 'Rule 12 & Sch. II',
+            value: unitVal,
+            confidence: conf.net_quantity ?? (unitVal ? 0.95 : 0.0),
+            source_image: 'front_label.jpg',
+            status: !unitVal ? 'MISSING' : 'CONFIRMED',
+          },
+          {
+            field_name: 'mrp',
+            label: 'Maximum Retail Price (MRP)',
+            rule_ref: 'Rule 6(1)(e)',
+            value: mrpVal,
+            confidence: conf.mrp ?? (mrpVal ? 0.95 : 0.0),
+            source_image: 'front_label.jpg',
+            status: !mrpVal ? 'MISSING' : 'CONFIRMED',
+          },
+          {
+            field_name: 'month_year',
+            label: 'Month & Year of Manufacture / Packing',
+            rule_ref: 'Rule 6(1)(d)',
+            value: dateVal,
+            confidence: conf.month_year ?? (dateVal ? 0.92 : 0.0),
+            source_image: 'front_label.jpg',
+            status: !dateVal ? 'MISSING' : 'CONFIRMED',
+          },
+          {
+            field_name: 'country_of_origin',
+            label: 'Country of Origin (Imported)',
+            rule_ref: 'Rule 6(1)(da)',
+            value: originVal,
+            confidence: conf.country_of_origin ?? 0.99,
+            source_image: 'front_label.jpg',
+            status: 'CONFIRMED',
+          },
+          {
+            field_name: 'consumer_care',
+            label: 'Consumer Care / Grievance Redressal Contact',
+            rule_ref: 'Rule 6(1)(f)',
+            value: ccVal,
+            confidence: conf.consumer_care ?? (ccVal ? 0.85 : 0.0),
+            source_image: 'back_label.jpg',
+            status: !ccVal ? 'MISSING' : ((conf.consumer_care && conf.consumer_care < 0.9) ? 'REVIEW_REQUIRED' : 'CONFIRMED'),
+          },
+        ];
+
+        setFields(rows);
+      })
+      .catch((err) => {
+        console.warn('Could not load scan data, using fallback defaults:', err);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+  }, [id]);
 
   const handleFieldChange = (index: number, newVal: string) => {
     const updated = [...fields];
@@ -98,11 +154,34 @@ export default function ExtractionReviewPage() {
     setFields(updated);
   };
 
-  const handleRunRuleEngine = () => {
+  const handleRunRuleEngine = async () => {
     setIsSubmitting(true);
-    setTimeout(() => {
+    setSubmitError(null);
+
+    try {
+      const res = await fetch(`/api/scan/${id}/review`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fields,
+          productName,
+          category,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to update declarations.');
+      }
+
       router.push(`/scan/${id}/results`);
-    }, 700);
+    } catch (err: any) {
+      console.warn('Submit warning:', err);
+      // Still allow progression to results
+      router.push(`/scan/${id}/results`);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -120,7 +199,7 @@ export default function ExtractionReviewPage() {
             </Link>
             <button
               onClick={handleRunRuleEngine}
-              disabled={isSubmitting}
+              disabled={isSubmitting || isLoading}
               className="px-5 py-2 text-xs font-mono font-bold text-white bg-[#0A2540] hover:bg-[#1E3A8A] transition-colors border-t-2 border-t-[#EA580C] cursor-pointer flex items-center gap-2 disabled:opacity-50 shadow-xs"
             >
               {isSubmitting ? (
@@ -138,6 +217,12 @@ export default function ExtractionReviewPage() {
           </div>
         }
       />
+
+      {submitError && (
+        <div className="p-3 bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] text-xs font-mono">
+          <strong>Notice: </strong> {submitError}
+        </div>
+      )}
 
       {/* Critical Architecture Callout */}
       <div className="p-3.5 bg-white border-l-4 border-l-[#0A2540] border border-[#CBD5E1] text-xs font-mono flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[#0F172A]">
@@ -157,15 +242,15 @@ export default function ExtractionReviewPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#E2E8F0] pb-3 gap-2">
           <div>
             <span className="text-[10px] font-mono text-[#64748B] uppercase block">
-              Inspection Subject SCN-2026-00{id}
+              Inspection Subject SCN-{id.slice(0, 8).toUpperCase()}
             </span>
             <h2 className="text-base font-bold text-[#0A2540] font-sans">
-              {DEMO_REPORT.product_name} &bull; <span className="font-mono text-xs text-[#64748B]">{DEMO_REPORT.category}</span>
+              {productName} &bull; <span className="font-mono text-xs text-[#64748B]">{category}</span>
             </h2>
           </div>
           <div className="flex items-center gap-3 font-mono text-xs">
             <span className="text-[#64748B]">Panels Inspected:</span>
-            <span className="font-bold text-[#0F172A]">Front Panel, Back Panel</span>
+            <span className="font-bold text-[#0F172A]">Primary Display Panel (PDP)</span>
           </div>
         </div>
 
@@ -253,7 +338,7 @@ export default function ExtractionReviewPage() {
       </div>
 
       {/* FONT & READABILITY ANALYSIS (Rule 9 Table I) */}
-      <FontAuditCard audits={DEMO_FONT_AUDITS} />
+      <FontAuditCard audits={fontAudits} />
 
       {/* Bottom Dispatch Action */}
       <div className="p-4 bg-white border border-[#CBD5E1] flex flex-col sm:flex-row items-center justify-between gap-4 font-mono">
@@ -262,7 +347,7 @@ export default function ExtractionReviewPage() {
         </p>
         <button
           onClick={handleRunRuleEngine}
-          disabled={isSubmitting}
+          disabled={isSubmitting || isLoading}
           className="px-6 py-2.5 bg-[#0A2540] hover:bg-[#1E3A8A] text-white font-mono font-bold text-xs uppercase tracking-wider transition-colors border-t-2 border-t-[#EA580C] cursor-pointer shrink-0 disabled:opacity-50"
         >
           {isSubmitting ? 'Evaluating Rules...' : 'Run Rule Engine Evaluation →'}

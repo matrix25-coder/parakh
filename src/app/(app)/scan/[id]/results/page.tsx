@@ -1,22 +1,54 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { PageHeader, StatusBadge, SeverityBadge, ComplianceVerdict, FontAuditCard } from '@/components/ui';
 import { DEMO_REPORT, DEMO_FONT_AUDITS } from '@/lib/demo/fixtures';
+import type { ComplianceReport, FontReadabilityAudit } from '@/lib/types';
 
 export default function ComplianceResultsPage() {
   const params = useParams();
-  const id = params?.id || '1';
+  const id = (params?.id as string) || '1';
 
+  const [isLoading, setIsLoading] = useState(true);
+  const [report, setReport] = useState<ComplianceReport>(DEMO_REPORT);
+  const [fontAudits, setFontAudits] = useState<FontReadabilityAudit[]>(DEMO_FONT_AUDITS);
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
-  const [expandedRuleCode, setExpandedRuleCode] = useState<string | null>('PCR-006');
+  const [expandedRuleCode, setExpandedRuleCode] = useState<string | null>(null);
 
-  const filteredResults = DEMO_REPORT.results.filter((r) => {
+  useEffect(() => {
+    setIsLoading(true);
+    fetch(`/api/scan/${id}`)
+      .then((res) => {
+        if (!res.ok) throw new Error('Scan not found');
+        return res.json();
+      })
+      .then((data) => {
+        if (data.complianceResult) {
+          setReport(data.complianceResult);
+          if (data.complianceResult.font_audits) {
+            setFontAudits(data.complianceResult.font_audits);
+          }
+          // Default expand first violation if any
+          const firstFail = data.complianceResult.results?.find((r: any) => r.status === 'FAIL');
+          if (firstFail) {
+            setExpandedRuleCode(firstFail.rule_code);
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('Could not fetch scan report, using defaults:', err);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+  }, [id]);
+
+  const filteredResults = report.results?.filter((r) => {
     if (filterStatus === 'ALL') return true;
     return r.status === filterStatus;
-  });
+  }) || [];
 
   const toggleExpand = (code: string) => {
     setExpandedRuleCode((prev) => (prev === code ? null : code));
@@ -33,7 +65,7 @@ export default function ComplianceResultsPage() {
               href={`/scan/${id}/violations`}
               className="px-3.5 py-2 text-xs font-mono font-bold text-[#B91C1C] bg-[#FEF2F2] hover:bg-[#FEE2E2] border border-[#FECACA] transition-colors"
             >
-              View Violations ({DEMO_REPORT.violations.length})
+              View Violations ({report.violations?.length || 0})
             </Link>
             <Link
               href={`/scan/${id}/evidence`}
@@ -53,10 +85,10 @@ export default function ComplianceResultsPage() {
 
       {/* Primary Compliance Verdict Banner */}
       <ComplianceVerdict
-        status={DEMO_REPORT.overall_status}
-        summary={DEMO_REPORT.summary}
-        productName={DEMO_REPORT.product_name}
-        category={DEMO_REPORT.category}
+        status={report.overall_status}
+        summary={report.summary}
+        productName={report.product_name}
+        category={report.category}
       />
 
       {/* Traceability Callout */}
@@ -212,7 +244,7 @@ export default function ComplianceResultsPage() {
       </div>
 
       {/* Font & Readability Analysis */}
-      <FontAuditCard audits={DEMO_FONT_AUDITS} />
+      <FontAuditCard audits={fontAudits} />
     </div>
   );
 }

@@ -1,16 +1,38 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { PageHeader, SeverityBadge } from '@/components/ui';
 import { DEMO_REPORT } from '@/lib/demo/fixtures';
+import type { ViolationDetail } from '@/lib/types';
 
 export default function ViolationsPage() {
   const params = useParams();
-  const id = params?.id || '1';
+  const id = (params?.id as string) || '1';
 
-  const violations = DEMO_REPORT.violations;
+  const [isLoading, setIsLoading] = useState(true);
+  const [violations, setViolations] = useState<ViolationDetail[]>(DEMO_REPORT.violations);
+
+  useEffect(() => {
+    setIsLoading(true);
+    fetch(`/api/scan/${id}`)
+      .then((res) => {
+        if (!res.ok) throw new Error('Scan not found');
+        return res.json();
+      })
+      .then((data) => {
+        if (data.complianceResult?.violations) {
+          setViolations(data.complianceResult.violations);
+        }
+      })
+      .catch((err) => {
+        console.warn('Could not fetch scan violations, using defaults:', err);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+  }, [id]);
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto py-2">
@@ -84,7 +106,7 @@ export default function ViolationsPage() {
                     Detected Declaration Data:
                   </span>
                   <span className="font-bold text-[#B91C1C] block text-sm">
-                    {v.field} = &quot;Not detected on packaging&quot;
+                    {v.field} = &quot;Not detected on packaging or non-compliant&quot;
                   </span>
                 </div>
 
@@ -93,7 +115,7 @@ export default function ViolationsPage() {
                     Statutory Legal Standard Expected:
                   </span>
                   <span className="font-bold text-[#0A2540] block text-sm">
-                    Mandatory Retail Price declaration inclusive of all taxes
+                    Mandatory statutory declaration under Legal Metrology Rules, 2011
                   </span>
                 </div>
               </div>
@@ -103,7 +125,7 @@ export default function ViolationsPage() {
                 <strong className="text-[#B91C1C] block font-mono text-[11px] mb-1 uppercase">
                   Statutory Determination Reason:
                 </strong>
-                The extracted package declarations do not contain the mandatory Maximum Retail Price (MRP) declaration required under Rule 6(1)(e) of the Legal Metrology (Packaged Commodities) Rules, 2011. This constitutes an actionable infraction under Section 36 of the Legal Metrology Act, 2009.
+                {v.violation_message} This constitutes an actionable infraction under Section 36 of the Legal Metrology Act, 2009.
               </div>
 
               {/* Evidentiary Action */}

@@ -1,12 +1,56 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 
 export function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
+  const [user, setUser] = useState<{ id: string; name: string; email: string } | null>(null);
   const pathname = usePathname();
+  const router = useRouter();
+
+  useEffect(() => {
+    // Check local storage first
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('parakh_user');
+      if (stored) {
+        try {
+          setUser(JSON.parse(stored));
+        } catch {}
+      }
+    }
+
+    // Verify session with server
+    fetch('/api/auth/me')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.authenticated && data.user) {
+          setUser(data.user);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('parakh_user', JSON.stringify(data.user));
+          }
+        } else {
+          setUser(null);
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('parakh_user');
+          }
+        }
+      })
+      .catch(() => {});
+  }, [pathname]);
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {}
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('parakh_user');
+    }
+    setUser(null);
+    router.push('/login');
+    router.refresh();
+  };
 
   const navLinks = [
     { name: 'Home', href: '/' },
@@ -72,7 +116,7 @@ export function Navbar() {
         </Link>
 
         {/* Desktop Navigation Links */}
-        <div className="hidden md:flex items-center gap-6">
+        <div className="hidden md:flex items-center gap-5">
           {navLinks.map((link) => {
             const isActive = pathname === link.href || (link.href !== '/' && pathname.startsWith(link.href));
             return (
@@ -89,6 +133,30 @@ export function Navbar() {
               </Link>
             );
           })}
+
+          {/* User Status / Login */}
+          {user ? (
+            <div className="flex items-center gap-2 font-mono text-xs bg-[#F8FAFC] border border-[#CBD5E1] px-2.5 py-1.5">
+              <div className="w-2 h-2 rounded-full bg-[#15803D]"></div>
+              <span className="font-bold text-[#0A2540] truncate max-w-[130px]" title={user.name}>
+                {user.name}
+              </span>
+              <button
+                onClick={handleLogout}
+                className="text-[11px] text-[#64748B] hover:text-[#B91C1C] ml-1 pl-1 border-l border-[#CBD5E1] cursor-pointer"
+                title="Sign Out"
+              >
+                Logout
+              </button>
+            </div>
+          ) : (
+            <Link
+              href="/login"
+              className="text-xs font-mono font-bold text-[#0A2540] hover:text-[#1E3A8A] px-3 py-1.5 border border-[#CBD5E1] bg-white hover:bg-[#F8FAFC] transition-colors"
+            >
+              Sign In
+            </Link>
+          )}
 
           {/* Primary Action Button: Start Inspection */}
           <Link
@@ -128,6 +196,30 @@ export function Navbar() {
                 {link.name}
               </Link>
             ))}
+
+            {user ? (
+              <div className="p-2 border-t border-[#E2E8F0] flex items-center justify-between text-xs font-mono">
+                <span className="font-bold text-[#0A2540]">{user.name}</span>
+                <button
+                  onClick={() => {
+                    setIsOpen(false);
+                    handleLogout();
+                  }}
+                  className="text-[#B91C1C] font-bold"
+                >
+                  Logout
+                </button>
+              </div>
+            ) : (
+              <Link
+                href="/login"
+                onClick={() => setIsOpen(false)}
+                className="py-2 px-3 text-xs font-mono font-bold text-[#0A2540] border border-[#CBD5E1] text-center"
+              >
+                Sign In
+              </Link>
+            )}
+
             <Link
               href="/scan"
               onClick={() => setIsOpen(false)}

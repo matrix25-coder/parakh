@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { PageHeader } from '@/components/ui';
 
 interface Stage {
@@ -23,8 +23,10 @@ const STAGES: Stage[] = [
   { id: '8', phase: 'RULE_ENGINE', number: '08', name: 'COMPLIANCE DETERMINATION', detail: 'Computing PASS/FAIL/REVIEW verdict and generating evidentiary links' },
 ];
 
-export default function ScanningProgressPage() {
+function ProgressContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const scanId = searchParams.get('id') || '1';
   const [currentStep, setCurrentStep] = useState(0);
 
   useEffect(() => {
@@ -36,12 +38,21 @@ export default function ScanningProgressPage() {
         clearInterval(interval);
         return prev;
       });
-    }, 850);
+    }, 180);
 
     return () => clearInterval(interval);
   }, []);
 
   const isAllDone = currentStep >= STAGES.length;
+
+  useEffect(() => {
+    if (isAllDone) {
+      const timer = setTimeout(() => {
+        router.push(`/scan/${scanId}/review`);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [isAllDone, router, scanId]);
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto py-4">
@@ -161,14 +172,21 @@ export default function ScanningProgressPage() {
             {isAllDone ? 'Extraction & Font Audit completed successfully.' : 'Statutory verification pipeline in progress...'}
           </span>
           <button
-            onClick={() => router.push('/scan/1/review')}
-            disabled={!isAllDone}
-            className="w-full sm:w-auto px-6 py-2.5 bg-[#0A2540] hover:bg-[#1E3A8A] text-white font-mono font-bold text-xs uppercase tracking-wider transition-colors border-t-2 border-t-[#EA580C] cursor-pointer disabled:opacity-40"
+            onClick={() => router.push(`/scan/${scanId}/review`)}
+            className="w-full sm:w-auto px-6 py-2.5 bg-[#0A2540] hover:bg-[#1E3A8A] text-white font-mono font-bold text-xs uppercase tracking-wider transition-colors border-t-2 border-t-[#EA580C] cursor-pointer"
           >
-            Review Extracted Declarations &rarr;
+            {isAllDone ? 'Review Extracted Declarations →' : 'Skip Ahead to Review →'}
           </button>
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ScanningProgressPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-xs font-mono text-[#64748B]">Loading inspection progress...</div>}>
+      <ProgressContent />
+    </Suspense>
   );
 }

@@ -49,6 +49,8 @@ export default function ScanProductPage() {
   const [isImported, setIsImported] = useState(false);
   const [countryOfOrigin, setCountryOfOrigin] = useState('India');
   const [isExtracting, setIsExtracting] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [scanProgressStage, setScanProgressStage] = useState<string>('');
 
   // Initialize camera when camera tab is active
   useEffect(() => {
@@ -93,16 +95,68 @@ export default function ScanProductPage() {
     }
   };
 
+  const optimizeImageForInspection = (dataUrl: string, maxDimension = 1400, quality = 0.85): Promise<string> => {
+    return new Promise((resolve) => {
+      if (typeof window === 'undefined') {
+        resolve(dataUrl);
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width <= maxDimension && height <= maxDimension && dataUrl.length < 500 * 1024) {
+          resolve(dataUrl);
+          return;
+        }
+        if (width > height) {
+          if (width > maxDimension) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          }
+        } else {
+          if (height > maxDimension) {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(dataUrl);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  };
+
   const handleCaptureFrame = () => {
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
+      let w = video.videoWidth || 640;
+      let h = video.videoHeight || 480;
+      if (w > 1400 || h > 1400) {
+        if (w > h) {
+          h = Math.round((h * 1400) / w);
+          w = 1400;
+        } else {
+          w = Math.round((w * 1400) / h);
+          h = 1400;
+        }
+      }
+      canvas.width = w;
+      canvas.height = h;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+        ctx.drawImage(video, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
         setCapturedSnapshot(dataUrl);
       }
     }
@@ -131,12 +185,14 @@ export default function ScanProductPage() {
 
     Array.from(files).forEach((file) => {
       const reader = new FileReader();
-      reader.onload = () => {
+      reader.onload = async () => {
+        const raw = reader.result as string;
+        const optimized = await optimizeImageForInspection(raw);
         setImages((prev) => [
           ...prev,
           {
             id: `upload-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-            dataUrl: reader.result as string,
+            dataUrl: optimized,
             face: selectedFace,
             name: file.name,
           },
@@ -155,6 +211,7 @@ export default function ScanProductPage() {
   };
 
   const handleLoadPreset = (type: 'compliant' | 'violation' | 'imported') => {
+    setScanError(null);
     if (type === 'compliant') {
       setProductName('Amrit Pure Cow Ghee 500ml');
       setCategory('FOOD');
@@ -197,33 +254,41 @@ export default function ScanProductPage() {
     }
   };
 
-  const handleStartExtraction = () => {
+  const handleStartExtraction = async () => {
+    if (images.length === 0) return;
     setIsExtracting(true);
+    setScanError(null);
+    setScanProgressStage('Uploading packaged commodity image...');
 
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem('parakh_inspections');
-        const existing = stored ? JSON.parse(stored) : [];
-        const isFail = productName.toLowerCase().includes('violation') || productName.toLowerCase().includes('biscuit') || productName.toLowerCase().includes('nutribite');
-        const newRecord = {
-          id: Date.now(),
-          scan_id: `SCN-2026-${String(existing.length + 13).padStart(3, '0')}`,
-          product: productName || 'Scanned Packaged Commodity',
-          category: category,
-          date: new Date().toISOString().split('T')[0],
-          status: isImported ? 'NEEDS_REVIEW' : isFail ? 'NON_COMPLIANT' : 'COMPLIANT',
-          violations: isFail ? 2 : 0,
-          inspector: 'Field Inspection Officer',
-        };
-        localStorage.setItem('parakh_inspections', JSON.stringify([newRecord, ...existing]));
-      } catch (err) {
-        console.warn('LocalStorage save error:', err);
+    try {
+      setScanProgressStage('Extracting declarations via optical models...');
+      const res = await fetch('/api/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: images[0].dataUrl,
+          productName,
+          category,
+          isImported,
+          countryOfOrigin,
+          face: images[0].face,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to process packaged commodity scan.');
       }
-    }
 
-    setTimeout(() => {
-      router.push('/scan/progress');
-    }, 600);
+      setScanProgressStage('Evaluating Legal Metrology rules...');
+
+      router.push(`/scan/progress?id=${data.scanId}`);
+    } catch (err: any) {
+      console.error('Scan error:', err);
+      setScanError(err.message || 'An error occurred during packaging inspection.');
+      setIsExtracting(false);
+    }
   };
 
   return (
@@ -232,6 +297,28 @@ export default function ScanProductPage() {
         title="Scan Packaged Commodity"
         description="Capture package images via real-time camera or select photographs to initiate statutory Legal Metrology inspection."
       />
+
+      {scanError && (
+        <div className="p-4 bg-[#FEF2F2] border-l-4 border-l-[#B91C1C] border border-[#FECACA] font-mono text-xs text-[#B91C1C] flex items-start justify-between gap-3">
+          <div>
+            <strong className="block uppercase tracking-wider mb-0.5">Extraction Notice:</strong>
+            <span>{scanError}</span>
+          </div>
+          <button
+            onClick={() => setScanError(null)}
+            className="text-[#B91C1C] font-bold px-2 py-0.5 hover:bg-[#FECACA] cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {isExtracting && (
+        <div className="p-3 bg-[#EFF6FF] border border-[#93C5FD] text-[#1E40AF] font-mono text-xs flex items-center gap-2">
+          <span className="w-3.5 h-3.5 border-2 border-[#1E40AF] border-t-transparent animate-spin"></span>
+          <span>{scanProgressStage || 'Processing package inspection...'}</span>
+        </div>
+      )}
 
       {/* QUICK PRESET TEST SAMPLES BAR */}
       <div className="p-4 bg-white border border-[#CBD5E1] flex flex-col md:flex-row md:items-center justify-between gap-3 font-mono text-xs">

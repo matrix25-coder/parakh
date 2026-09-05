@@ -1,31 +1,64 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { PageHeader, StatusBadge, SeverityBadge, ConfidenceBadge } from '@/components/ui';
 import { DEMO_REPORT } from '@/lib/demo/fixtures';
-import type { RuleEvaluationDetail } from '@/lib/types';
+import type { RuleEvaluationDetail, ComplianceReport } from '@/lib/types';
+import type { BoundingBox } from '@/lib/extraction/types';
 
 export default function EvidenceViewerPage() {
   const params = useParams();
-  const id = params?.id || '1';
+  const id = (params?.id as string) || '1';
 
-  const evaluatedRules = DEMO_REPORT.results;
-  const [selectedRule, setSelectedRule] = useState<RuleEvaluationDetail>(
-    evaluatedRules.find((r) => r.status === 'FAIL') || evaluatedRules[0]
-  );
+  const [isLoading, setIsLoading] = useState(true);
+  const [report, setReport] = useState<ComplianceReport>(DEMO_REPORT);
+  const [imagePath, setImagePath] = useState<string>('');
+  const [selectedRule, setSelectedRule] = useState<RuleEvaluationDetail>(DEMO_REPORT.results[0]);
   const [activeFace, setActiveFace] = useState<'front' | 'back'>('front');
-
-  // Bounding box coordinates mapped to package percentage
-  const boundingBoxes: Record<string, { top: number; left: number; width: number; height: number; face: string }> = {
+  const [boundingBoxes, setBoundingBoxes] = useState<Record<string, BoundingBox>>({
     manufacturer_name: { top: 12, left: 10, width: 75, height: 14, face: 'front' },
     commodity_description: { top: 30, left: 10, width: 60, height: 10, face: 'front' },
-    net_quantity: { top: 44, left: 10, width: 35, height: 9, face: 'front' },
-    month_year: { top: 57, left: 10, width: 40, height: 8, face: 'front' },
-    consumer_care: { top: 68, left: 10, width: 80, height: 18, face: 'back' },
-    date_of_manufacture: { top: 57, left: 10, width: 40, height: 8, face: 'front' },
-  };
+    net_quantity: { top: 48, left: 10, width: 35, height: 10, face: 'front' },
+    mrp: { top: 48, left: 55, width: 35, height: 10, face: 'front' },
+    month_year: { top: 66, left: 10, width: 40, height: 10, face: 'front' },
+    consumer_care: { top: 66, left: 55, width: 40, height: 14, face: 'back' },
+  });
+
+  useEffect(() => {
+    setIsLoading(true);
+    fetch(`/api/scan/${id}`)
+      .then((res) => {
+        if (!res.ok) throw new Error('Scan not found');
+        return res.json();
+      })
+      .then((data) => {
+        if (data.image_path) {
+          setImagePath(data.image_path);
+        }
+        if (data.complianceResult) {
+          setReport(data.complianceResult);
+          const firstFail = data.complianceResult.results?.find((r: any) => r.status === 'FAIL');
+          if (firstFail) {
+            setSelectedRule(firstFail);
+          } else if (data.complianceResult.results?.[0]) {
+            setSelectedRule(data.complianceResult.results[0]);
+          }
+        }
+        if (data.extractedData?.boundingBoxes && Object.keys(data.extractedData.boundingBoxes).length > 0) {
+          setBoundingBoxes((prev) => ({ ...prev, ...data.extractedData.boundingBoxes }));
+        }
+      })
+      .catch((err) => {
+        console.warn('Could not fetch scan evidence data:', err);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+  }, [id]);
+
+  const evaluatedRules = report.results || [];
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto py-2">
@@ -54,7 +87,9 @@ export default function EvidenceViewerPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 font-mono text-xs text-center border border-[#CBD5E1] bg-white p-3 shadow-xs">
         <div className="border-r border-[#CBD5E1] p-1">
           <span className="text-[10px] text-[#64748B] uppercase block font-bold">1. WHERE?</span>
-          <span className="font-bold text-[#0A2540]">{selectedRule.evidence?.source_image || 'No box'}</span>
+          <span className="font-bold text-[#0A2540] truncate block">
+            {imagePath ? imagePath.split('/').pop() : selectedRule.evidence?.source_image || 'front_label.jpg'}
+          </span>
         </div>
         <div className="border-r border-[#CBD5E1] p-1">
           <span className="text-[10px] text-[#64748B] uppercase block font-bold">2. WHAT DATA?</span>
@@ -109,19 +144,34 @@ export default function EvidenceViewerPage() {
 
           {/* Interactive Inspection Canvas */}
           <div className="flex-1 p-6 bg-[#F1F5F9] flex items-center justify-center relative overflow-hidden">
-            <div className="w-full max-w-sm aspect-3/4 bg-white border-2 border-[#CBD5E1] relative p-6 shadow-md flex flex-col justify-between select-none">
-              <div className="border-b border-dashed border-[#CBD5E1] pb-3">
-                <span className="text-[10px] font-mono text-[#64748B] tracking-widest block uppercase">
-                  {DEMO_REPORT.category} &bull; {activeFace === 'front' ? 'PRINCIPAL DISPLAY PANEL' : 'INFORMATION PANEL'}
-                </span>
-                <span className="text-base font-bold tracking-tight text-[#0A2540] block font-sans">
-                  {activeFace === 'front' ? 'NutriCrunch Almond Cookies' : 'STATUTORY DECLARATIONS'}
-                </span>
-              </div>
+            <div className="w-full max-w-md aspect-3/4 bg-white border-2 border-[#CBD5E1] relative shadow-md overflow-hidden select-none">
+              {/* If real uploaded image is available, render real photo */}
+              {imagePath ? (
+                <img
+                  src={imagePath}
+                  alt={report.product_name || 'Scanned package'}
+                  className="w-full h-full object-contain absolute inset-0 bg-slate-100"
+                />
+              ) : (
+                <div className="absolute inset-0 p-6 flex flex-col justify-between">
+                  <div className="border-b border-dashed border-[#CBD5E1] pb-3">
+                    <span className="text-[10px] font-mono text-[#64748B] tracking-widest block uppercase">
+                      {report.category} &bull; {activeFace === 'front' ? 'PRINCIPAL DISPLAY PANEL' : 'INFORMATION PANEL'}
+                    </span>
+                    <span className="text-base font-bold tracking-tight text-[#0A2540] block font-sans">
+                      {report.product_name}
+                    </span>
+                  </div>
+                  <div className="pt-3 border-t border-dashed border-[#CBD5E1] flex justify-between text-[9px] font-mono text-[#64748B]">
+                    <span>FSSAI Lic Verified</span>
+                    <span>Standard SI Units Verified</span>
+                  </div>
+                </div>
+              )}
 
               {/* Bounding box overlays */}
               {Object.entries(boundingBoxes).map(([fieldName, box]) => {
-                if (box.face !== activeFace) return null;
+                if (box.face && box.face !== activeFace) return null;
                 const isSelected = selectedRule.field === fieldName;
                 const rule = evaluatedRules.find((r) => r.field === fieldName);
                 const isFail = rule?.status === 'FAIL';
@@ -160,16 +210,11 @@ export default function EvidenceViewerPage() {
                   </div>
                 );
               })}
-
-              <div className="pt-3 border-t border-dashed border-[#CBD5E1] flex justify-between text-[9px] font-mono text-[#64748B]">
-                <span>FSSAI Lic: 10019022009841</span>
-                <span>Standard SI Units Verified</span>
-              </div>
             </div>
           </div>
 
           <div className="p-3 bg-white border-t border-[#CBD5E1] text-[11px] text-[#64748B] flex items-center justify-between font-mono">
-            <span>Active panel: {activeFace}_label.jpg</span>
+            <span>Package Image: {imagePath ? imagePath.split('/').pop() : 'front_label.jpg'}</span>
             <span>Click any box to inspect legal determination</span>
           </div>
         </div>
@@ -256,7 +301,7 @@ export default function EvidenceViewerPage() {
                     onClick={() => {
                       setSelectedRule(rule);
                       const box = boundingBoxes[rule.field];
-                      if (box) setActiveFace(box.face as 'front' | 'back');
+                      if (box?.face) setActiveFace(box.face as 'front' | 'back');
                     }}
                     className={`p-3 flex items-center justify-between cursor-pointer transition-colors ${
                       isSelected
