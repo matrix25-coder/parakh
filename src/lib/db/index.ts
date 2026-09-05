@@ -31,33 +31,100 @@ export interface ScanRecord {
   created_at: string;
 }
 
+import os from 'os';
+
 // Global database connection singleton
 let dbInstance: DatabaseSync | null = null;
+
+function getDatabasePath(): string {
+  // If explicitly configured via DATABASE_URL
+  if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('file:')) {
+    return path.resolve(process.env.DATABASE_URL.replace('file:', ''));
+  }
+
+  // Check if running in a serverless environment where /var/task is read-only
+  const isServerless = !!(
+    process.env.VERCEL ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    process.env.VERCEL_ENV ||
+    process.env.LAMBDA_TASK_ROOT
+  );
+
+  if (isServerless) {
+    const tmpDir = path.join(os.tmpdir(), 'parakh-data');
+    try {
+      if (!fs.existsSync(tmpDir)) {
+        fs.mkdirSync(tmpDir, { recursive: true });
+      }
+      return path.join(tmpDir, 'parakh.db');
+    } catch {
+      return path.join(os.tmpdir(), 'parakh.db');
+    }
+  }
+
+  // Local development: use ./data/parakh.db
+  const dataDir = path.join(process.cwd(), 'data');
+  try {
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    return path.join(dataDir, 'parakh.db');
+  } catch {
+    // If local directory cannot be created (e.g. read-only filesystem), fallback to os.tmpdir()
+    const fallbackDir = path.join(os.tmpdir(), 'parakh-data');
+    try {
+      if (!fs.existsSync(fallbackDir)) {
+        fs.mkdirSync(fallbackDir, { recursive: true });
+      }
+      return path.join(fallbackDir, 'parakh.db');
+    } catch {
+      return ':memory:';
+    }
+  }
+}
 
 export function getDb(): DatabaseSync {
   if (dbInstance) {
     return dbInstance;
   }
 
-  const dataDir = path.join(process.cwd(), 'data');
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
+  const dbPath = getDatabasePath();
+  let db: DatabaseSync;
+
+  try {
+    db = new DatabaseSync(dbPath);
+    if (dbPath !== ':memory:') {
+      try {
+        db.exec('PRAGMA journal_mode = WAL;');
+      } catch {}
+    }
+    db.exec('PRAGMA foreign_keys = ON;');
+  } catch (err) {
+    console.warn(`Could not open SQLite at ${dbPath}, falling back to in-memory database:`, err);
+    db = new DatabaseSync(':memory:');
+    db.exec('PRAGMA foreign_keys = ON;');
   }
-
-  const dbPath = path.join(dataDir, 'parakh.db');
-  const db = new DatabaseSync(dbPath);
-
-  // Enable WAL mode for high performance & concurrency
-  db.exec('PRAGMA journal_mode = WAL;');
-  db.exec('PRAGMA foreign_keys = ON;');
 
   // Run schema initialization
   const schemaPath = path.join(process.cwd(), 'src', 'lib', 'db', 'schema.sql');
   if (fs.existsSync(schemaPath)) {
-    const schemaSql = fs.readFileSync(schemaPath, 'utf8');
-    db.exec(schemaSql);
+    try {
+      const schemaSql = fs.readFileSync(schemaPath, 'utf8');
+      db.exec(schemaSql);
+    } catch {
+      // Fallback to inline schema
+      initInlineSchema(db);
+    }
   } else {
-    db.exec(`
+    initInlineSchema(db);
+  }
+
+  dbInstance = db;
+  return dbInstance;
+}
+
+function initInlineSchema(db: DatabaseSync): void {
+  db.exec(`
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -89,10 +156,6 @@ export function getDb(): DatabaseSync {
       CREATE INDEX IF NOT EXISTS idx_scan_history_user_id ON scan_history(user_id);
       CREATE INDEX IF NOT EXISTS idx_scan_history_created_at ON scan_history(created_at DESC);
     `);
-  }
-
-  dbInstance = db;
-  return dbInstance;
 }
 
 // ── USER REPOSITORY ──────────────────────────────────────────────────────────
