@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/ui';
 import type { PackageFace, ProductCategory } from '@/lib/types';
 import { saveScanToClient } from '@/lib/client-scan-cache';
+import { getApiUrl } from '@/lib/api-config';
 
 interface CapturedImage {
   id: string;
@@ -36,6 +37,17 @@ export default function ScanProductPage() {
   const [isExtracting, setIsExtracting] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanProgressStage, setScanProgressStage] = useState<string>('');
+  const [isNative, setIsNative] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      import('@capacitor/core')
+        .then(({ Capacitor }) => {
+          setIsNative(Capacitor.isNativePlatform());
+        })
+        .catch(() => {});
+    }
+  }, []);
 
   // Initialize camera when camera tab is active
   useEffect(() => {
@@ -119,6 +131,47 @@ export default function ScanProductPage() {
       img.onerror = () => resolve(dataUrl);
       img.src = dataUrl;
     });
+  };
+
+  const handleNativeCapture = async (source: 'camera' | 'photos') => {
+    setCameraError(null);
+    try {
+      const { Camera, CameraResultType, CameraSource } = await import('@capacitor/camera');
+      const photo = await Camera.getPhoto({
+        quality: 85,
+        allowEditing: false,
+        resultType: CameraResultType.DataUrl,
+        source: source === 'camera' ? CameraSource.Camera : CameraSource.Photos,
+        saveToGallery: false,
+        promptLabelHeader: 'Statutory Inspection Photo',
+        promptLabelCancel: 'Cancel',
+        promptLabelPhoto: 'From Photo Gallery',
+        promptLabelPicture: 'Take Live Photo',
+      });
+
+      if (photo?.dataUrl) {
+        const optimized = await optimizeImageForInspection(photo.dataUrl);
+        const newImg: CapturedImage = {
+          id: `native-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+          dataUrl: optimized,
+          face: selectedFace,
+          name: source === 'camera'
+            ? `Camera_${selectedFace}_${Date.now().toString().slice(-4)}.${photo.format || 'jpg'}`
+            : `Gallery_${selectedFace}_${Date.now().toString().slice(-4)}.${photo.format || 'jpg'}`,
+        };
+        setImages((prev) => [...prev, newImg]);
+      }
+    } catch (err: any) {
+      if (err.message && (err.message.includes('User cancelled') || err.message.includes('cancelled'))) {
+        return;
+      }
+      console.warn('Native camera capture note:', err);
+      setCameraError(
+        err.message?.includes('denied')
+          ? 'Camera or Photo Gallery permission was denied. You can grant access in Android App Settings.'
+          : (err.message || 'Unable to access device camera.')
+      );
+    }
   };
 
   const handleCaptureFrame = () => {
@@ -253,7 +306,7 @@ export default function ScanProductPage() {
         name: img.name,
       }));
 
-      const res = await fetch('/api/scan', {
+      const res = await fetch(getApiUrl('/api/scan'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -362,14 +415,14 @@ export default function ScanProductPage() {
         {/* Left 65%: Image Capture Terminal */}
         <div className="lg:col-span-8 bg-white border border-[#CBD5E1] flex flex-col">
           {/* Capture Mode Tabs */}
-          <div className="flex border-b border-[#CBD5E1] bg-[#F8FAFC] font-mono text-xs">
+          <div className="flex border-b border-[#CBD5E1] bg-[#F8FAFC] font-mono text-xs overflow-x-auto scrollbar-none whitespace-nowrap">
             <button
               type="button"
               onClick={() => {
                 setActiveTab('camera');
                 setCapturedSnapshot(null);
               }}
-              className={`px-4 sm:px-6 py-3 font-bold border-b-2 transition-colors cursor-pointer flex items-center gap-2 ${
+              className={`shrink-0 px-4 sm:px-6 py-3 font-bold border-b-2 transition-colors cursor-pointer flex items-center gap-2 ${
                 activeTab === 'camera'
                   ? 'border-[#0A2540] text-[#0A2540] bg-white'
                   : 'border-transparent text-[#64748B] hover:text-[#0F172A]'
@@ -387,7 +440,7 @@ export default function ScanProductPage() {
                 setActiveTab('upload');
                 stopCamera();
               }}
-              className={`px-4 sm:px-6 py-3 font-bold border-b-2 transition-colors cursor-pointer flex items-center gap-2 ${
+              className={`shrink-0 px-4 sm:px-6 py-3 font-bold border-b-2 transition-colors cursor-pointer flex items-center gap-2 ${
                 activeTab === 'upload'
                   ? 'border-[#0A2540] text-[#0A2540] bg-white'
                   : 'border-transparent text-[#64748B] hover:text-[#0F172A]'
@@ -406,7 +459,7 @@ export default function ScanProductPage() {
                 setActiveTab('manual');
                 stopCamera();
               }}
-              className={`px-4 sm:px-6 py-3 font-bold border-b-2 transition-colors cursor-pointer flex items-center gap-2 ${
+              className={`shrink-0 px-4 sm:px-6 py-3 font-bold border-b-2 transition-colors cursor-pointer flex items-center gap-2 ${
                 activeTab === 'manual'
                   ? 'border-[#0A2540] text-[#0A2540] bg-white'
                   : 'border-transparent text-[#64748B] hover:text-[#0F172A]'
@@ -436,12 +489,27 @@ export default function ScanProductPage() {
                   <p className="text-xs text-[#475569] leading-relaxed font-sans">
                     {cameraError}
                   </p>
-                  <div className="flex justify-center pt-2">
+                  <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
                     <button
-                      onClick={() => setActiveTab('upload')}
-                      className="px-4 py-2 bg-[#0A2540] text-white font-mono text-xs font-bold hover:bg-[#1E3A8A] transition-colors"
+                      type="button"
+                      onClick={() => handleNativeCapture('camera')}
+                      className="px-4 py-2 bg-[#0A2540] text-white font-mono text-xs font-bold hover:bg-[#1E3A8A] transition-colors cursor-pointer flex items-center gap-1.5"
                     >
-                      Upload Package Images &rarr;
+                      <span>📸 Take Photo (Native Camera)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleNativeCapture('photos')}
+                      className="px-4 py-2 bg-[#F1F5F9] text-[#0A2540] border border-[#CBD5E1] font-mono text-xs font-bold hover:bg-[#E2E8F0] transition-colors cursor-pointer flex items-center gap-1.5"
+                    >
+                      <span>🖼️ Select from Gallery</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('upload')}
+                      className="px-4 py-2 bg-white text-[#475569] border border-[#CBD5E1] font-mono text-xs hover:text-[#0F172A] transition-colors"
+                    >
+                      Upload Files &rarr;
                     </button>
                   </div>
                 </div>
@@ -552,6 +620,35 @@ export default function ScanProductPage() {
                       title="Switch front/rear camera"
                     >
                       Flip Camera
+                    </button>
+                  </div>
+
+                  {/* Native Mobile Camera & Gallery Options */}
+                  <div className="flex items-center justify-center gap-2 w-full max-w-lg pt-3 border-t border-[#334155]/60">
+                    <button
+                      type="button"
+                      onClick={() => handleNativeCapture('camera')}
+                      className="flex-1 py-2 px-2.5 bg-[#0A2540] hover:bg-[#1E3A8A] text-white font-mono text-xs font-bold border border-[#475569] flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                      title="Take photograph with device native camera"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                        <circle cx="12" cy="13" r="4" />
+                      </svg>
+                      <span>Native Camera</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleNativeCapture('photos')}
+                      className="flex-1 py-2 px-2.5 bg-[#1E293B] hover:bg-[#334155] text-white font-mono text-xs font-bold border border-[#475569] flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                      title="Select product image from device gallery"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                        <circle cx="8.5" cy="8.5" r="1.5" />
+                        <polyline points="21 15 16 10 5 21" />
+                      </svg>
+                      <span>Photo Gallery</span>
                     </button>
                   </div>
                 </div>

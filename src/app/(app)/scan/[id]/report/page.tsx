@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { StatusBadge, SeverityBadge, FontAuditCard } from '@/components/ui';
 import { getScanFromClient, saveScanToClient } from '@/lib/client-scan-cache';
+import { getApiUrl } from '@/lib/api-config';
 import type { ComplianceReport, FontReadabilityAudit } from '@/lib/types';
 
 export default function ComplianceReportPage() {
@@ -51,7 +52,7 @@ export default function ComplianceReportPage() {
 
       // 2. Fetch server
       try {
-        const res = await fetch(`/api/scan/${id}`);
+        const res = await fetch(getApiUrl(`/api/scan/${id}`));
         if (res.ok) {
           const data = await res.json();
           if (isMounted) {

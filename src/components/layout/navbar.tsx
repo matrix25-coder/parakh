@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { getApiUrl } from '@/lib/api-config';
 
 export function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
@@ -22,7 +23,7 @@ export function Navbar() {
     }
 
     // Verify session with server
-    fetch('/api/auth/me')
+    fetch(getApiUrl('/api/auth/me'))
       .then((res) => res.json())
       .then((data) => {
         if (data.authenticated && data.user) {
@@ -42,7 +43,7 @@ export function Navbar() {
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      await fetch(getApiUrl('/api/auth/logout'), { method: 'POST' });
     } catch {}
     if (typeof window !== 'undefined') {
       localStorage.removeItem('parakh_user');

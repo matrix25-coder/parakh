@@ -7,15 +7,24 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:e2e": "tsx scripts/test-e2e.mjs"
+    "test:e2e": "tsx scripts/test-e2e.mjs",
+    "cap:sync": "cap sync android",
+    "cap:open": "cap open android",
+    "build:android": "next build && cap sync android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.1",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/camera": "^8.2.4",
+    "@capacitor/core": "^8.5.1",
     "next": "16.3.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "sharp": "^0.33.5",
     "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

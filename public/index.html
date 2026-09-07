@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>PARAKH — Legal Metrology Inspection Platform</title>
+  <style>
+    :root {
+      --primary: #0A2540;
+      --accent: #EA580C;
+      --bg: #F8FAFC;
+      --text: #0F172A;
+      --muted: #64748B;
+      --card-bg: #FFFFFF;
+      --border: #CBD5E1;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+    .container {
+      width: 90%;
+      max-width: 440px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      padding: 32px 24px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+      text-align: center;
+    }
+    .logo-badge {
+      width: 56px;
+      height: 56px;
+      background: var(--primary);
+      color: white;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-bottom: 3px solid var(--accent);
+      margin-bottom: 16px;
+    }
+    h1 {
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--primary);
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+    }
+    .subtitle {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 24px;
+      font-family: monospace;
+    }
+    .status-box {
+      background: #F1F5F9;
+      border: 1px solid var(--border);
+      padding: 16px;
+      margin-bottom: 20px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .spinner {
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      border: 3px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 12px;
+      background: var(--primary);
+      color: white;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border: none;
+      cursor: pointer;
+      border-top: 2px solid var(--accent);
+      margin-top: 8px;
+    }
+    .btn:hover { background: #1E3A8A; }
+    .footer {
+      margin-top: 24px;
+      font-size: 10px;
+      color: var(--muted);
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo-badge">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M12 3v18" />
+        <path d="M5 7l7-4 7 4" />
+        <path d="M5 7v4c0 3 3 6 7 7 4-1 7-4 7-7V7" />
+        <path d="M9 12l2 2 4-4" />
+      </svg>
+    </div>
+    <h1>PARAKH</h1>
+    <div class="subtitle">Legal Metrology Compliance Platform</div>
+
+    <div class="status-box">
+      <div class="spinner" id="spinner"></div>
+      <div id="status-msg">Connecting to PARAKH regulatory inspection system...</div>
+    </div>
+
+    <button class="btn" id="retry-btn" onclick="checkConnection()">Retry Connection</button>
+
+    <div class="footer">
+      Department of Consumer Affairs &bull; Govt of India<br>
+      Legal Metrology (Packaged Commodities) Rules, 2011
+    </div>
+  </div>
+
+  <script>
+    function checkConnection() {
+      const msg = document.getElementById('status-msg');
+      msg.textContent = 'Checking server connectivity...';
+      fetch('/api/auth/me')
+        .then(() => {
+          window.location.reload();
+        })
+        .catch(() => {
+          msg.textContent = 'Backend server unreachable. Ensure you are connected to the network or the PARAKH server is running.';
+        });
+    }
+  </script>
+</body>
+</html>

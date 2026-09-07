@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { PageHeader } from '@/components/ui';
+import { getApiUrl } from '@/lib/api-config';
 
 interface ScanSummary {
   id: string;
@@ -44,7 +45,7 @@ export default function CompareLabelsPage() {
   useEffect(() => {
     async function loadScans() {
       try {
-        const res = await fetch('/api/history');
+        const res = await fetch(getApiUrl('/api/history'));
         if (res.ok) {
           const data = await res.json();
           const list: ScanSummary[] = data.scans || [];
@@ -76,8 +77,8 @@ export default function CompareLabelsPage() {
       setError(null);
       try {
         const [resA, resB] = await Promise.all([
-          fetch(`/api/scan/${scanAId}`),
-          fetch(`/api/scan/${scanBId}`),
+          fetch(getApiUrl(`/api/scan/${scanAId}`)),
+          fetch(getApiUrl(`/api/scan/${scanBId}`)),
         ]);
 
         if (!resA.ok || !resB.ok) {

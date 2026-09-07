@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { PageHeader, StatusBadge } from '@/components/ui';
+import { getApiUrl } from '@/lib/api-config';
 import type { ComplianceStatus } from '@/lib/types';
 
 interface ReportArchiveItem {
@@ -22,7 +23,7 @@ export default function ReportsArchivePage() {
 
   useEffect(() => {
     setIsLoading(true);
-    fetch('/api/history')
+    fetch(getApiUrl('/api/history'))
       .then((res) => res.json())
       .then((data) => {
         if (data.scans && Array.isArray(data.scans)) {

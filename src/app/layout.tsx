@@ -1,6 +1,16 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono, Archivo, Space_Grotesk } from "next/font/google";
+import { NativeBridge } from "@/components/native-bridge";
 import "./globals.css";
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+  themeColor: "#0A2540",
+};
 
 const inter = Inter({
   variable: "--font-sans",
@@ -72,8 +82,9 @@ export default function RootLayout({
       </head>
       <body
         suppressHydrationWarning
-        className="min-h-full flex flex-col bg-[#F8FAFC] text-[#0F172A] font-sans selection:bg-[#1E3A8A] selection:text-white"
+        className="min-h-full flex flex-col bg-[#F8FAFC] text-[#0F172A] font-sans selection:bg-[#1E3A8A] selection:text-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
       >
+        <NativeBridge />
         {children}
       </body>
     </html>

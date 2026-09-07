@@ -13,6 +13,7 @@ import {
 } from '@/components/ui';
 import type { ComplianceReport, FontReadabilityAudit, RuleEvaluationDetail } from '@/lib/types';
 import { getScanFromClient, saveScanToClient, syncScanToServer } from '@/lib/client-scan-cache';
+import { getApiUrl } from '@/lib/api-config';
 
 export default function ComplianceResultsPage() {
   const params = useParams();
@@ -68,7 +69,7 @@ export default function ComplianceResultsPage() {
 
       // 2. Query server
       try {
-        const res = await fetch(`/api/scan/${id}`);
+        const res = await fetch(getApiUrl(`/api/scan/${id}`));
         if (res.ok) {
           const serverData = await res.json();
           if (isMounted) {

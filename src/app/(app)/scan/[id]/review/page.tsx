@@ -17,6 +17,7 @@ import {
   buildStatutoryFieldRows,
   type StatutoryFieldRow,
 } from '@/lib/client-scan-cache';
+import { getApiUrl } from '@/lib/api-config';
 
 type FieldRow = StatutoryFieldRow;
 
@@ -76,7 +77,7 @@ export default function ExtractionReviewPage() {
 
       // 2. Fetch fresh or verify from server
       try {
-        const res = await fetch(`/api/scan/${id}`);
+        const res = await fetch(getApiUrl(`/api/scan/${id}`));
         if (res.ok) {
           const serverData = await res.json();
           if (isMounted) {
@@ -143,7 +144,7 @@ export default function ExtractionReviewPage() {
     }
 
     try {
-      const res = await fetch(`/api/scan/${id}/review`, {
+      const res = await fetch(getApiUrl(`/api/scan/${id}/review`), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

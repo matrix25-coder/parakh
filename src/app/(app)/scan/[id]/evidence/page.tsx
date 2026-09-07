@@ -7,6 +7,7 @@ import { PageHeader, StatusBadge, SeverityBadge, ConfidenceBadge } from '@/compo
 import type { RuleEvaluationDetail, ComplianceReport } from '@/lib/types';
 import type { BoundingBox } from '@/lib/extraction/types';
 import { getScanFromClient, saveScanToClient } from '@/lib/client-scan-cache';
+import { getApiUrl } from '@/lib/api-config';
 
 interface PackageImageItem {
   face: string;
@@ -137,7 +138,7 @@ export default function EvidenceViewerPage() {
 
       // 2. Fetch server
       try {
-        const res = await fetch(`/api/scan/${id}`);
+        const res = await fetch(getApiUrl(`/api/scan/${id}`));
         if (res.ok) {
           const serverData = await res.json();
           if (isMounted) {

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { PageHeader, MetricCard, StatusBadge } from '@/components/ui';
+import { getApiUrl } from '@/lib/api-config';
 const INITIAL_DASHBOARD = {
   totalInspections: 0,
   compliant: 0,
@@ -25,7 +26,7 @@ export default function DashboardPage() {
   const [stats, setStats] = useState(INITIAL_DASHBOARD);
 
   useEffect(() => {
-    fetch('/api/dashboard/stats')
+    fetch(getApiUrl('/api/dashboard/stats'))
       .then((res) => res.json())
       .then((data) => {
         if (data && typeof data.totalInspections === 'number') {

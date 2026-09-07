@@ -1,5 +1,7 @@
 'use client';
 
+import { getApiUrl } from '@/lib/api-config';
+
 /**
  * Robust client-side cache and synchronization utility for Packaged Commodity scans.
  * Operates across SessionStorage, LocalStorage, and browser IndexedDB to ensure
@@ -156,7 +158,7 @@ export async function syncScanToServer(scan: CachedScanRecord): Promise<boolean>
   if (typeof window === 'undefined' || !scan || !scan.id) return false;
 
   try {
-    const res = await fetch(`/api/scan/${scan.id}`, {
+    const res = await fetch(getApiUrl(`/api/scan/${scan.id}`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ scanRecord: scan }),

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { PageHeader, StatusBadge, DataTable, FilterBar } from '@/components/ui';
+import { getApiUrl } from '@/lib/api-config';
 import type { ComplianceStatus } from '@/lib/types';
 
 interface InspectionRecord {
@@ -27,7 +28,7 @@ export default function InspectionsPage() {
 
   // Load newly scanned products from DB and search history from localStorage
   useEffect(() => {
-    fetch('/api/history')
+    fetch(getApiUrl('/api/history'))
       .then((res) => res.json())
       .then((data) => {
         if (data.scans && Array.isArray(data.scans)) {
