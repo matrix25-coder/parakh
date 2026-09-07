@@ -16,34 +16,10 @@ interface InspectionRecord {
   inspector: string;
 }
 
-const DEFAULT_RECORDS: InspectionRecord[] = [
-  { id: 1, scan_id: 'SCN-2026-001', product: 'NutriCrunch Almond Butter Cookies', category: 'FOOD', date: '2026-09-04', status: 'NON_COMPLIANT', violations: 1, inspector: 'Insp. R. Verma' },
-  { id: 2, scan_id: 'SCN-2026-002', product: 'Britannia Bourbon Biscuit 150g', category: 'FOOD', date: '2026-09-04', status: 'COMPLIANT', violations: 0, inspector: 'Insp. S. Patnaik' },
-  { id: 3, scan_id: 'SCN-2026-003', product: 'Amrit Pure Cow Ghee 500ml', category: 'FOOD', date: '2026-09-04', status: 'COMPLIANT', violations: 0, inspector: 'Insp. A. Nair' },
-  { id: 4, scan_id: 'SCN-2026-004', product: 'NutriBite Protein Cookies 120g', category: 'FOOD', date: '2026-09-03', status: 'NON_COMPLIANT', violations: 2, inspector: 'Insp. R. Verma' },
-  { id: 5, scan_id: 'SCN-2026-005', product: 'Himalayan Alpine Glacial Water 750ml', category: 'FOOD', date: '2026-09-03', status: 'NEEDS_REVIEW', violations: 0, inspector: 'Insp. K. Rao' },
-  { id: 6, scan_id: 'SCN-2026-006', product: 'Himalayan Herbal Green Tea 100g', category: 'FOOD', date: '2026-09-03', status: 'COMPLIANT', violations: 0, inspector: 'Insp. S. Patnaik' },
-  { id: 7, scan_id: 'SCN-2026-007', product: 'LuxeGlow Botanical Face Cream 50g', category: 'COSMETICS', date: '2026-09-02', status: 'COMPLIANT', violations: 0, inspector: 'Insp. A. Nair' },
-  { id: 8, scan_id: 'SCN-2026-008', product: 'TechPro Braided USB-C Cable 1.5m', category: 'ELECTRONICS', date: '2026-09-02', status: 'NEEDS_REVIEW', violations: 0, inspector: 'Insp. R. Verma' },
-  { id: 9, scan_id: 'SCN-2026-009', product: 'Royal Heritage Basmati Rice 5kg', category: 'FOOD', date: '2026-09-01', status: 'NON_COMPLIANT', violations: 2, inspector: 'Insp. K. Rao' },
-  { id: 10, scan_id: 'SCN-2026-010', product: 'Apex Silent Wireless Mouse', category: 'ELECTRONICS', date: '2026-08-30', status: 'COMPLIANT', violations: 0, inspector: 'Insp. S. Patnaik' },
-  { id: 11, scan_id: 'SCN-2026-011', product: 'DermaSafe Mineral Sunscreen SPF 50', category: 'COSMETICS', date: '2026-08-28', status: 'NON_COMPLIANT', violations: 1, inspector: 'Insp. A. Nair' },
-  { id: 12, scan_id: 'SCN-2026-012', product: 'SparkleMax Dishwash Powder 1kg', category: 'GENERAL', date: '2026-08-26', status: 'COMPLIANT', violations: 0, inspector: 'Insp. K. Rao' },
-];
-
-const RECENT_SAMPLE_QUERIES = [
-  'Britannia Bourbon',
-  'Amrit Pure Cow Ghee',
-  'NutriBite',
-  'Himalayan Glacial Water',
-  'Basmati Rice',
-  'Sunscreen',
-];
-
 export default function InspectionsPage() {
   const [searchTerm, setSearchTerm] = useState('');
-  const [searchHistory, setSearchHistory] = useState<string[]>(RECENT_SAMPLE_QUERIES);
-  const [records, setRecords] = useState<InspectionRecord[]>(DEFAULT_RECORDS);
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [records, setRecords] = useState<InspectionRecord[]>([]);
   const [filters, setFilters] = useState<Record<string, string>>({
     status: 'ALL',
     category: 'ALL',
@@ -55,16 +31,7 @@ export default function InspectionsPage() {
       .then((res) => res.json())
       .then((data) => {
         if (data.scans && Array.isArray(data.scans)) {
-          const userScans: InspectionRecord[] = data.scans;
-          const seen = new Set<string>();
-          const combined: InspectionRecord[] = [];
-          [...userScans, ...DEFAULT_RECORDS].forEach((rec) => {
-            if (!seen.has(rec.scan_id)) {
-              seen.add(rec.scan_id);
-              combined.push(rec);
-            }
-          });
-          setRecords(combined);
+          setRecords(data.scans);
         }
       })
       .catch((err) => console.warn('Could not fetch DB history:', err));

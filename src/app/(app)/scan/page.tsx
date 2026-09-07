@@ -13,84 +13,6 @@ interface CapturedImage {
   name: string;
 }
 
-// Generate an authentic synthetic package image as a valid base64 data URI for instant testing
-function createPackageCanvasDataUrl(
-  title: string,
-  weight: string,
-  price: string,
-  statusText: string,
-  color: string,
-  mfgText: string = 'Mfd By: Amrit Dairy Products Pvt Ltd, Anand, Gujarat - 388001'
-) {
-  if (typeof document !== 'undefined') {
-    const canvas = document.createElement('canvas');
-    canvas.width = 800;
-    canvas.height = 500;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(0, 0, 800, 500);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 6;
-      ctx.strokeRect(20, 20, 760, 460);
-
-      // Header band
-      ctx.fillStyle = '#0A2540';
-      ctx.fillRect(30, 30, 740, 60);
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = 'bold 22px sans-serif';
-      ctx.fillText(title.toUpperCase(), 50, 70);
-
-      // Declarations
-      ctx.fillStyle = '#1E293B';
-      ctx.font = 'bold 18px sans-serif';
-      ctx.fillText(mfgText, 50, 135);
-
-      ctx.fillStyle = '#0A2540';
-      ctx.font = 'bold 24px monospace';
-      ctx.fillText(`NET QUANTITY: ${weight}`, 50, 195);
-
-      ctx.fillStyle = '#B45309';
-      ctx.font = 'bold 24px monospace';
-      ctx.fillText(`MAX. RETAIL PRICE: ${price}`, 50, 255);
-
-      ctx.fillStyle = '#475569';
-      ctx.font = '18px monospace';
-      ctx.fillText('PKD: 07/2026 • CONSUMER CARE: 1800-425-4449 | care@parakh.gov.in', 50, 315);
-
-      ctx.fillStyle = '#0F172A';
-      ctx.font = '16px monospace';
-      ctx.fillText('Country of Origin: India • FSSAI Lic. No. 10014022002890', 50, 365);
-
-      // Audit box
-      ctx.fillStyle = '#F8FAFC';
-      ctx.fillRect(30, 400, 740, 65);
-      ctx.strokeStyle = '#CBD5E1';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(30, 400, 740, 65);
-      ctx.fillStyle = color;
-      ctx.font = 'bold 16px monospace';
-      ctx.fillText(`STATUTORY COMPLIANCE: ${statusText}`, 50, 440);
-
-      return canvas.toDataURL('image/jpeg', 0.9);
-    }
-  }
-
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
-    <rect width="600" height="400" fill="#FFFFFF"/>
-    <rect x="20" y="20" width="560" height="360" fill="#F8FAFC" stroke="${color}" stroke-width="3"/>
-    <rect x="40" y="40" width="520" height="50" fill="#0A2540"/>
-    <text x="50" y="72" fill="#FFFFFF" font-family="sans-serif" font-size="20" font-weight="bold">${title.toUpperCase()}</text>
-    <text x="50" y="130" fill="#334155" font-family="sans-serif" font-size="16">${mfgText}</text>
-    <text x="50" y="170" fill="#0A2540" font-family="monospace" font-size="22" font-weight="bold">NET QUANTITY: ${weight}</text>
-    <text x="50" y="215" fill="#D97706" font-family="monospace" font-size="22" font-weight="bold">MAX. RETAIL PRICE: ${price}</text>
-    <text x="50" y="260" fill="#475569" font-family="monospace" font-size="16">PKD: 07/2026 • CONSUMER CARE: 1800-425-4449</text>
-    <rect x="40" y="300" width="520" height="60" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1"/>
-    <text x="60" y="338" fill="${color}" font-family="monospace" font-size="14" font-weight="bold">STATUTORY AUDIT: ${statusText}</text>
-  </svg>`;
-  return `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
-}
-
 export default function ScanProductPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'camera' | 'upload' | 'manual'>('camera');
@@ -146,7 +68,7 @@ export default function ScanProductPage() {
     } catch (err: any) {
       console.warn('Camera access note:', err);
       setCameraError(
-        err.message || 'Camera permission denied or camera device unavailable. You can use preset samples or upload images.'
+        err.message || 'Camera permission denied or camera device unavailable. Please upload package images directly.'
       );
     }
   };
@@ -317,68 +239,6 @@ export default function ScanProductPage() {
     }
   };
 
-  const handleLoadPreset = (type: 'compliant' | 'violation' | 'imported') => {
-    setScanError(null);
-    if (type === 'compliant') {
-      setProductName('Amrit Pure Cow Ghee 500ml');
-      setCategory('FOOD');
-      setCountryOfOrigin('India');
-      setIsImported(false);
-      setImages([
-        {
-          id: 'preset-front-1',
-          dataUrl: createPackageCanvasDataUrl('Amrit Pure Cow Ghee 500ml', '500 ml (452 g)', '₹385.00 (Incl. of all taxes)', 'PASS • FULL STATUTORY COMPLIANCE', '#15803D', 'Mfd By: Amrit Dairy Products Pvt Ltd, Anand, Gujarat - 388001'),
-          face: 'FRONT',
-          name: 'Amrit_Ghee_Front_PDP.jpg',
-        },
-        {
-          id: 'preset-back-1',
-          dataUrl: createPackageCanvasDataUrl('Amrit Pure Cow Ghee - Information Panel', '500 ml', '₹385.00 (Incl. of all taxes)', 'BACK PANEL • MFD BY AMRIT DAIRY GUJARAT • FSSAI 10014022002890', '#15803D', 'Mfd By: Amrit Dairy Products Pvt Ltd, Anand, Gujarat - 388001'),
-          face: 'BACK',
-          name: 'Amrit_Ghee_Back_Panel.jpg',
-        },
-      ]);
-    } else if (type === 'violation') {
-      setProductName('NutriBite Butter Crisp Biscuits 120g');
-      setCategory('FOOD');
-      setCountryOfOrigin('India');
-      setIsImported(false);
-      setImages([
-        {
-          id: 'preset-front-2',
-          dataUrl: createPackageCanvasDataUrl('NutriBite Butter Crisp 120g', '120 gms', 'Rs. 35.00 only', 'FAIL • RULE 6(1)(e) & TABLE I DEFECTS', '#B91C1C', 'Mfd By: NutriBite Biscuits & Confectioneries Pvt Ltd, Industrial Area, Mumbai - 400001'),
-          face: 'FRONT',
-          name: 'NutriBite_Front_PDP.jpg',
-        },
-        {
-          id: 'preset-back-2',
-          dataUrl: createPackageCanvasDataUrl('NutriBite Crisp - Back Panel', '120 gms', 'Rs. 35.00', 'BACK PANEL • MISSING PROPER UNIT & TAX INCLUSIVITY', '#B91C1C', 'Mfd By: NutriBite Biscuits & Confectioneries Pvt Ltd, Industrial Area, Mumbai - 400001'),
-          face: 'BACK',
-          name: 'NutriBite_Back_Panel.jpg',
-        },
-      ]);
-    } else {
-      setProductName('Himalayan Alpine Glacial Water 750ml');
-      setCategory('FOOD');
-      setCountryOfOrigin('Bhutan');
-      setIsImported(true);
-      setImages([
-        {
-          id: 'preset-front-3',
-          dataUrl: createPackageCanvasDataUrl('Alpine Glacial Water 750ml', '750 ml', '₹120.00 (Incl. taxes)', 'NEEDS_REVIEW • IMPORTER & ORIGIN CHECK', '#B45309', 'Imported by: Himalayan Springs Importers Ltd, Barakhamba Road, New Delhi - 110001'),
-          face: 'FRONT',
-          name: 'Alpine_Water_Front_PDP.jpg',
-        },
-        {
-          id: 'preset-back-3',
-          dataUrl: createPackageCanvasDataUrl('Alpine Glacial Water - Importer Panel', '750 ml', '₹120.00 (Incl. taxes)', 'BACK PANEL • IMPORTER & ORIGIN BHUTAN', '#B45309', 'Imported by: Himalayan Springs Importers Ltd, Barakhamba Road, New Delhi - 110001'),
-          face: 'BACK',
-          name: 'Alpine_Water_Back_Panel.jpg',
-        },
-      ]);
-    }
-  };
-
   const handleStartExtraction = async () => {
     if (images.length === 0) return;
     setIsExtracting(true);
@@ -460,7 +320,7 @@ export default function ScanProductPage() {
 
       setScanProgressStage('Evaluating Legal Metrology rules...');
 
-      router.push(`/scan/progress?id=${data.scanId}`);
+      router.push(`/scan/${data.scanId}/review`);
     } catch (err: any) {
       console.error('Scan error:', err);
       setScanError(err.message || 'An error occurred during packaging inspection.');
@@ -496,44 +356,6 @@ export default function ScanProductPage() {
           <span>{scanProgressStage || 'Processing package inspection...'}</span>
         </div>
       )}
-
-      {/* QUICK PRESET TEST SAMPLES BAR */}
-      <div className="p-4 bg-white border border-[#CBD5E1] flex flex-col md:flex-row md:items-center justify-between gap-3 font-mono text-xs">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 bg-[#EA580C]"></span>
-            <span className="text-[10px] uppercase text-[#64748B] tracking-wider font-bold">
-              INSTANT TEST PRESETS (1-CLICK EVALUATION)
-            </span>
-          </div>
-          <span className="font-semibold text-[#0F172A] mt-0.5 block">
-            No physical package at hand? Test pre-calibrated sample commodities:
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => handleLoadPreset('compliant')}
-            className="px-3 py-1.5 bg-[#F0FDF4] border border-[#BBF7D0] text-[#15803D] font-bold hover:bg-[#DCFCE7] transition-colors cursor-pointer text-[11px]"
-          >
-            ✓ Compliant Sample
-          </button>
-          <button
-            type="button"
-            onClick={() => handleLoadPreset('violation')}
-            className="px-3 py-1.5 bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] font-bold hover:bg-[#FEE2E2] transition-colors cursor-pointer text-[11px]"
-          >
-            ✕ Non-Compliant Sample
-          </button>
-          <button
-            type="button"
-            onClick={() => handleLoadPreset('imported')}
-            className="px-3 py-1.5 bg-[#FFFBEB] border border-[#FDE68A] text-[#B45309] font-bold hover:bg-[#FEF3C7] transition-colors cursor-pointer text-[11px]"
-          >
-            ⚠ Imported Review Sample
-          </button>
-        </div>
-      </div>
 
       {/* Main Multi-Mode Workspace */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -614,18 +436,12 @@ export default function ScanProductPage() {
                   <p className="text-xs text-[#475569] leading-relaxed font-sans">
                     {cameraError}
                   </p>
-                  <div className="flex flex-col sm:flex-row gap-2 justify-center pt-2">
-                    <button
-                      onClick={() => handleLoadPreset('compliant')}
-                      className="px-4 py-2 bg-[#0A2540] text-white font-mono text-xs font-bold hover:bg-[#1E3A8A] transition-colors"
-                    >
-                      Load Sample Package &rarr;
-                    </button>
+                  <div className="flex justify-center pt-2">
                     <button
                       onClick={() => setActiveTab('upload')}
-                      className="px-4 py-2 bg-[#F1F5F9] border border-[#CBD5E1] text-[#0A2540] font-mono text-xs font-bold hover:bg-[#E2E8F0] transition-colors"
+                      className="px-4 py-2 bg-[#0A2540] text-white font-mono text-xs font-bold hover:bg-[#1E3A8A] transition-colors"
                     >
-                      Browse Files
+                      Upload Package Images &rarr;
                     </button>
                   </div>
                 </div>
@@ -843,7 +659,7 @@ export default function ScanProductPage() {
 
             {images.length === 0 ? (
               <div className="p-4 border border-dashed border-[#CBD5E1] text-center text-xs font-mono text-[#64748B] italic bg-white">
-                No images captured yet. Take a snapshot using the camera, select files, or load a preset test sample above.
+                No images captured yet. Take a snapshot using the camera, select files to upload, or paste label declarations.
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

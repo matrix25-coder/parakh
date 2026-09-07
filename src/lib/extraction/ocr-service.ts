@@ -17,8 +17,6 @@ export interface ExtractionOptions {
  * Master OCR and Structured Data Extraction service
  * Tries AI Vision (Gemini) if configured, else uses local Tesseract OCR + Heuristic Parser
  */
-const DEFAULT_FALLBACK_KEY = 'REDACTED_GEMINI_API_KEY';
-
 export async function extractProductData(
   imageBuffer: Buffer,
   options?: ExtractionOptions
@@ -26,8 +24,7 @@ export async function extractProductData(
   const hasGeminiKey = !!(
     process.env.GEMINI_API_KEY ||
     process.env.AI_API_KEY ||
-    process.env.GOOGLE_API_KEY ||
-    DEFAULT_FALLBACK_KEY
+    process.env.GOOGLE_API_KEY
   );
 
   // 1. Try Gemini Multimodal Vision if key is available

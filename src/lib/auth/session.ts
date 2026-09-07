@@ -3,7 +3,13 @@ import { cookies } from 'next/headers';
 import { getUserById, type UserRecord } from '@/lib/db';
 
 const SESSION_COOKIE_NAME = 'parakh_session';
-const SESSION_SECRET = process.env.AUTH_SECRET || 'parakh-lmpc-statutory-secret-key-2026-sih';
+const SESSION_SECRET =
+  process.env.AUTH_SECRET ||
+  (process.env.NODE_ENV === 'production'
+    ? (() => {
+        throw new Error('AUTH_SECRET environment variable is required in production.');
+      })()
+    : 'parakh-dev-local-session-secret');
 const MAX_AGE_SECONDS = 7 * 24 * 60 * 60; // 7 days
 
 export interface SessionPayload {

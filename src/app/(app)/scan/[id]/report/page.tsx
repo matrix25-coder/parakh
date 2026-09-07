@@ -4,14 +4,12 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { StatusBadge, SeverityBadge, FontAuditCard } from '@/components/ui';
-import { DEMO_REPORT, DEMO_FONT_AUDITS } from '@/lib/demo/fixtures';
-import { WELLCORE_SCAN_FIXTURE } from '@/lib/demo/wellcore-fixture';
 import { getScanFromClient, saveScanToClient } from '@/lib/client-scan-cache';
 import type { ComplianceReport, FontReadabilityAudit } from '@/lib/types';
 
 export default function ComplianceReportPage() {
   const params = useParams();
-  const id = (params?.id as string) || '1';
+  const id = (params?.id as string) || '';
 
   const [isLoading, setIsLoading] = useState(true);
   const [report, setReport] = useState<ComplianceReport | null>(null);
@@ -39,11 +37,13 @@ export default function ComplianceReportPage() {
     setIsLoading(true);
 
     async function loadReport() {
+      if (!id) {
+        setIsLoading(false);
+        return;
+      }
+
       // 1. Check local client cache
       let localScan = await getScanFromClient(id);
-      if (!localScan && id === 'wellcore-creatine-analysis') {
-        localScan = WELLCORE_SCAN_FIXTURE as any;
-      }
       if (isMounted && localScan?.complianceResult) {
         applyReportData(localScan);
         setIsLoading(false);
@@ -57,22 +57,6 @@ export default function ComplianceReportPage() {
           if (isMounted) {
             applyReportData(data);
             saveScanToClient(data);
-          }
-        } else if (!localScan) {
-          if (id === 'wellcore-creatine-analysis') {
-            if (isMounted) applyReportData(WELLCORE_SCAN_FIXTURE);
-          } else {
-            const latest = await getScanFromClient('latest');
-            if (isMounted) {
-              if (latest?.complianceResult) {
-                applyReportData(latest);
-              } else if (id === '1') {
-                applyReportData({
-                  complianceResult: DEMO_REPORT,
-                  inspector_name: 'Field Inspection Officer',
-                });
-              }
-            }
           }
         }
       } catch (err) {

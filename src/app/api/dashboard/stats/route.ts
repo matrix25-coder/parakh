@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUserFromRequest } from '@/lib/auth/middleware-utils';
 import { getDashboardMetrics, getUserByEmail } from '@/lib/db';
-import { DEMO_DASHBOARD } from '@/lib/demo/fixtures';
 
 export async function GET(req: NextRequest) {
   try {
@@ -21,12 +20,15 @@ export async function GET(req: NextRequest) {
     }
 
     if (!authUser) {
-      return NextResponse.json(DEMO_DASHBOARD);
+      return NextResponse.json(
+        { error: 'Authentication required to view dashboard metrics.' },
+        { status: 401 }
+      );
     }
 
     const metrics = getDashboardMetrics(authUser.id);
 
-    // If user has no scans yet, merge with baseline or return zeroed stats
+    // If user has no scans yet, return legitimate zeroed stats
     if (metrics.totalInspections === 0) {
       return NextResponse.json({
         totalInspections: 0,
@@ -34,7 +36,7 @@ export async function GET(req: NextRequest) {
         violations: 0,
         reviewRequired: 0,
         recentInspections: [],
-        topViolations: DEMO_DASHBOARD.topViolations,
+        topViolations: [],
       });
     }
 

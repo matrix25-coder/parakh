@@ -55,7 +55,9 @@ export default function FontAuditCard({ audits }: FontAuditCardProps) {
                         : 'text-[#B45309]'
                     }
                   >
-                    {item.detected_height_mm.toFixed(1)} mm
+                    {item.detected_height_mm !== null && item.detected_height_mm !== undefined
+                      ? `${item.detected_height_mm.toFixed(1)} mm`
+                      : 'Pending Gauge'}
                   </span>
                 </td>
                 <td className="p-3 text-[#64748B] border-r border-[#CBD5E1]">

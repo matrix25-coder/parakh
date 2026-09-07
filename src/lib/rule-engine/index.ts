@@ -547,7 +547,7 @@ export function evaluateCompliance(
   let overall_status: ComplianceStatus = 'COMPLIANT';
   if (failed > 0) {
     overall_status = 'NON_COMPLIANT';
-  } else if (review > 0 || fontAudits.some((a) => a.status === 'FAIL' || a.status === 'REVIEW')) {
+  } else if (review > 0 || fontAudits.some((a) => a.status === 'FAIL')) {
     overall_status = 'NEEDS_REVIEW';
   }
 

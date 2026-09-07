@@ -75,16 +75,10 @@ export function Navbar() {
           </span>
         </div>
 
-        <div className="flex items-center gap-3 font-mono text-[10px]">
-          <div className="flex items-center gap-1">
-            <span className="text-[#64748B] text-[9px] mr-1">FONT:</span>
-            <button className="px-1.5 py-0.5 bg-white border border-[#CBD5E1] text-[#0F172A] hover:bg-[#E2E8F0] cursor-pointer">A-</button>
-            <button className="px-1.5 py-0.5 bg-white border border-[#CBD5E1] text-[#0F172A] font-bold hover:bg-[#E2E8F0] cursor-pointer">A</button>
-            <button className="px-1.5 py-0.5 bg-white border border-[#CBD5E1] text-[#0F172A] hover:bg-[#E2E8F0] cursor-pointer">A+</button>
-          </div>
-          <span className="text-[#CBD5E1]">|</span>
-          <span className="text-[#0A2540] font-bold cursor-pointer">English</span>
-          <span className="text-[#64748B] hover:text-[#0F172A] cursor-pointer">हिन्दी</span>
+        <div className="flex items-center gap-2 font-mono text-[10px] text-[#64748B]">
+          <span>Department of Consumer Affairs</span>
+          <span className="text-[#CBD5E1]">&bull;</span>
+          <span>Government of India</span>
         </div>
       </div>
 

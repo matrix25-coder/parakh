@@ -15,16 +15,8 @@ interface ReportArchiveItem {
   violations: number;
 }
 
-const DEFAULT_REPORTS: ReportArchiveItem[] = [
-  { id: '1', ref: 'PARAKH/LMPC/2026/001', product: 'NutriCrunch Almond Butter Cookies', category: 'FOOD', status: 'NON_COMPLIANT', date: '2026-09-04', violations: 1 },
-  { id: '2', ref: 'PARAKH/LMPC/2026/002', product: 'Himalayan Herbal Green Tea 100g', category: 'FOOD', status: 'COMPLIANT', date: '2026-09-03', violations: 0 },
-  { id: '3', ref: 'PARAKH/LMPC/2026/003', product: 'LuxeGlow Botanical Face Cream 50g', category: 'COSMETICS', status: 'COMPLIANT', date: '2026-09-03', violations: 0 },
-  { id: '4', ref: 'PARAKH/LMPC/2026/004', product: 'TechPro Braided USB-C Cable 1.5m', category: 'ELECTRONICS', status: 'NEEDS_REVIEW', date: '2026-09-02', violations: 0 },
-  { id: '5', ref: 'PARAKH/LMPC/2026/005', product: 'Royal Heritage Basmati Rice 5kg', category: 'FOOD', status: 'NON_COMPLIANT', date: '2026-09-01', violations: 2 },
-];
-
 export default function ReportsArchivePage() {
-  const [reports, setReports] = useState<ReportArchiveItem[]>(DEFAULT_REPORTS);
+  const [reports, setReports] = useState<ReportArchiveItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -44,15 +36,7 @@ export default function ReportsArchivePage() {
             violations: s.violations ?? 0,
           }));
 
-          const seen = new Set<string>();
-          const combined: ReportArchiveItem[] = [];
-          [...dynamicReports, ...DEFAULT_REPORTS].forEach((item) => {
-            if (!seen.has(item.id)) {
-              seen.add(item.id);
-              combined.push(item);
-            }
-          });
-          setReports(combined);
+          setReports(dynamicReports);
         }
       })
       .catch((err) => console.warn('Could not load reports history:', err))

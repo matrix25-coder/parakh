@@ -12,7 +12,7 @@ export interface RuleEvidence {
 export interface FontReadabilityAudit {
   field: string;
   label: string;
-  detected_height_mm: number;
+  detected_height_mm: number | null;
   required_height_mm: number;
   status: 'PASS' | 'FAIL' | 'REVIEW';
   standard_rule: string;

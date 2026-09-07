@@ -1,8 +1,6 @@
 import sharp from 'sharp';
 import type { StructuredProductData } from './types';
 
-const DEFAULT_FALLBACK_KEY = 'REDACTED_GEMINI_API_KEY';
-
 /**
  * Extract structured Legal Metrology declarations using Google Gemini Multimodal Vision API
  */
@@ -16,7 +14,7 @@ export async function runGeminiVisionExtraction(
     countryOfOrigin?: string;
   }
 ): Promise<StructuredProductData> {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.AI_API_KEY || process.env.GOOGLE_API_KEY || DEFAULT_FALLBACK_KEY;
+  const apiKey = process.env.GEMINI_API_KEY || process.env.AI_API_KEY || process.env.GOOGLE_API_KEY;
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY not configured.');
   }

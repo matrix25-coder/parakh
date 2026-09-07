@@ -3,23 +3,40 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { PageHeader, MetricCard, StatusBadge } from '@/components/ui';
-import { DEMO_DASHBOARD } from '@/lib/demo/fixtures';
+const INITIAL_DASHBOARD = {
+  totalInspections: 0,
+  compliant: 0,
+  violations: 0,
+  reviewRequired: 0,
+  recentInspections: [] as Array<{
+    id: string;
+    scan_id: string;
+    product: string;
+    category: string;
+    date: string;
+    status: 'COMPLIANT' | 'NON_COMPLIANT' | 'NEEDS_REVIEW';
+    violations: number;
+    inspector: string;
+  }>,
+  topViolations: [] as Array<{ rule_code: string; title: string; count: number }>,
+};
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState(DEMO_DASHBOARD);
+  const [stats, setStats] = useState(INITIAL_DASHBOARD);
 
   useEffect(() => {
     fetch('/api/dashboard/stats')
       .then((res) => res.json())
       .then((data) => {
         if (data && typeof data.totalInspections === 'number') {
-          setStats((prev) => ({
-            ...prev,
-            ...data,
-            recentInspections: data.recentInspections && data.recentInspections.length > 0
-              ? data.recentInspections
-              : prev.recentInspections,
-          }));
+          setStats({
+            totalInspections: data.totalInspections,
+            compliant: data.compliant,
+            violations: data.violations,
+            reviewRequired: data.reviewRequired,
+            recentInspections: Array.isArray(data.recentInspections) ? data.recentInspections : [],
+            topViolations: Array.isArray(data.topViolations) ? data.topViolations : [],
+          });
         }
       })
       .catch((err) => console.warn('Could not fetch dashboard stats:', err));
@@ -136,30 +153,38 @@ export default function DashboardPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E2E8F0] font-mono text-[11px] bg-white">
-                {stats.recentInspections.map((row) => (
-                  <tr key={row.scan_id} className="hover:bg-[#F8FAFC]">
-                    <td className="p-3 font-bold text-[#0A2540] border-r border-[#CBD5E1]">
-                      {row.scan_id}
-                    </td>
-                    <td className="p-3 font-sans font-bold text-[#0F172A] border-r border-[#CBD5E1] max-w-[150px] truncate">
-                      {row.product}
-                    </td>
-                    <td className="p-3 text-[#64748B] border-r border-[#CBD5E1]">
-                      {row.category}
-                    </td>
-                    <td className="p-3 border-r border-[#CBD5E1]">
-                      <StatusBadge status={row.status} />
-                    </td>
-                    <td className="p-3 text-right">
-                      <Link
-                        href={`/scan/${row.id}/results`}
-                        className="text-xs font-bold text-[#0A2540] hover:underline"
-                      >
-                        Inspect &rarr;
-                      </Link>
+                {stats.recentInspections.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="p-6 text-center text-[#64748B] font-mono text-xs">
+                      No inspections recorded yet. Start by scanning a packaged commodity label.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  stats.recentInspections.map((row) => (
+                    <tr key={row.scan_id} className="hover:bg-[#F8FAFC]">
+                      <td className="p-3 font-bold text-[#0A2540] border-r border-[#CBD5E1]">
+                        {row.scan_id}
+                      </td>
+                      <td className="p-3 font-sans font-bold text-[#0F172A] border-r border-[#CBD5E1] max-w-[150px] truncate">
+                        {row.product}
+                      </td>
+                      <td className="p-3 text-[#64748B] border-r border-[#CBD5E1]">
+                        {row.category}
+                      </td>
+                      <td className="p-3 border-r border-[#CBD5E1]">
+                        <StatusBadge status={row.status} />
+                      </td>
+                      <td className="p-3 text-right">
+                        <Link
+                          href={`/scan/${row.id}/results`}
+                          className="text-xs font-bold text-[#0A2540] hover:underline"
+                        >
+                          Inspect &rarr;
+                        </Link>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -177,28 +202,34 @@ export default function DashboardPage() {
           </div>
 
           <div className="space-y-3 font-mono text-xs">
-            {stats.topViolations.map((v) => {
-              const maxCount = 10;
-              const widthPct = Math.round((v.count / maxCount) * 100);
+            {stats.topViolations.length === 0 ? (
+              <div className="p-6 border border-dashed border-[#CBD5E1] bg-[#F8FAFC] text-center text-[#64748B] text-xs font-mono">
+                No statutory infractions recorded in database.
+              </div>
+            ) : (
+              stats.topViolations.map((v) => {
+                const maxCount = 10;
+                const widthPct = Math.round((v.count / maxCount) * 100);
 
-              return (
-                <div key={v.rule_code} className="p-3 border border-[#CBD5E1] bg-[#F8FAFC] space-y-1.5">
-                  <div className="flex justify-between items-center">
-                    <span className="font-bold text-[#B91C1C]">{v.rule_code}</span>
-                    <span className="text-[#64748B] text-[11px]">{v.count} violations detected</span>
+                return (
+                  <div key={v.rule_code} className="p-3 border border-[#CBD5E1] bg-[#F8FAFC] space-y-1.5">
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-[#B91C1C]">{v.rule_code}</span>
+                      <span className="text-[#64748B] text-[11px]">{v.count} violations detected</span>
+                    </div>
+                    <div className="text-[11px] font-sans text-[#0F172A] font-semibold">
+                      {v.title}
+                    </div>
+                    <div className="w-full h-1.5 bg-[#E2E8F0]">
+                      <div
+                        className="h-full bg-[#B91C1C]"
+                        style={{ width: `${widthPct}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="text-[11px] font-sans text-[#0F172A] font-semibold">
-                    {v.title}
-                  </div>
-                  <div className="w-full h-1.5 bg-[#E2E8F0]">
-                    <div
-                      className="h-full bg-[#B91C1C]"
-                      style={{ width: `${widthPct}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         </div>
       </div>

@@ -44,3 +44,15 @@ public/uploads/*
 !public/uploads/sample_*.jpg
 !data/.gitkeep
 *.traineddata
+
+# android build
+android/.gradle/
+android/app/build/
+android/build/
+android/.idea/
+android/*.iml
+android/app/*.iml
+android/local.properties
+android/captures/
+android/.externalNativeBuild/
+android/.cxx/

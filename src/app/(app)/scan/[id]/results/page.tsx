@@ -13,12 +13,10 @@ import {
 } from '@/components/ui';
 import type { ComplianceReport, FontReadabilityAudit, RuleEvaluationDetail } from '@/lib/types';
 import { getScanFromClient, saveScanToClient, syncScanToServer } from '@/lib/client-scan-cache';
-import { WELLCORE_SCAN_FIXTURE } from '@/lib/demo/wellcore-fixture';
-import { DEMO_REPORT } from '@/lib/demo/fixtures';
 
 export default function ComplianceResultsPage() {
   const params = useParams();
-  const id = (params?.id as string) || '1';
+  const id = (params?.id as string) || '';
 
   const [isLoading, setIsLoading] = useState(true);
   const [report, setReport] = useState<ComplianceReport | null>(null);
@@ -54,11 +52,14 @@ export default function ComplianceResultsPage() {
     setFetchError(null);
 
     async function loadResults() {
+      if (!id) {
+        setFetchError('No inspection scan ID provided.');
+        setIsLoading(false);
+        return;
+      }
+
       // 1. Try instant client cache retrieval
       let localScan = await getScanFromClient(id);
-      if (!localScan && id === 'wellcore-creatine-analysis') {
-        localScan = WELLCORE_SCAN_FIXTURE as any;
-      }
       if (isMounted && localScan && localScan.complianceResult) {
         applyScanRecord(localScan);
         setIsLoading(false);
@@ -75,25 +76,8 @@ export default function ComplianceResultsPage() {
             saveScanToClient(serverData);
           }
         } else if (!localScan) {
-          if (id === 'wellcore-creatine-analysis') {
-            if (isMounted) applyScanRecord(WELLCORE_SCAN_FIXTURE);
-          } else {
-            // Check latest scan
-            const latestScan = await getScanFromClient('latest');
-            if (isMounted) {
-              if (latestScan && latestScan.complianceResult) {
-                applyScanRecord(latestScan);
-              } else if (id === '1') {
-                applyScanRecord({
-                  id: '1',
-                  product_name: DEMO_REPORT.product_name,
-                  category: DEMO_REPORT.category,
-                  complianceResult: DEMO_REPORT,
-                });
-              } else {
-                setFetchError('Scan record not found on server or local storage.');
-              }
-            }
+          if (isMounted) {
+            setFetchError('Inspection scan record not found.');
           }
         }
       } catch (err: any) {

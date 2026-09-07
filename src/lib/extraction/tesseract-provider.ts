@@ -56,7 +56,7 @@ export async function runLocalOcr(imageBuffer: Buffer): Promise<LocalOcrResult> 
 
     return {
       text: text || '',
-      confidence: (confidence || 0) / 100,
+      confidence: confidence || 0,
       wordBoxes,
     };
   } catch (err) {

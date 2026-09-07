@@ -4,14 +4,12 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { PageHeader, SeverityBadge } from '@/components/ui';
-import { DEMO_REPORT } from '@/lib/demo/fixtures';
-import { WELLCORE_SCAN_FIXTURE } from '@/lib/demo/wellcore-fixture';
 import { getScanFromClient } from '@/lib/client-scan-cache';
 import type { ViolationDetail } from '@/lib/types';
 
 export default function ViolationsPage() {
   const params = useParams();
-  const id = (params?.id as string) || '1';
+  const id = (params?.id as string) || '';
 
   const [isLoading, setIsLoading] = useState(true);
   const [violations, setViolations] = useState<ViolationDetail[]>([]);
@@ -21,11 +19,13 @@ export default function ViolationsPage() {
     setIsLoading(true);
 
     async function loadViolations() {
+      if (!id) {
+        setIsLoading(false);
+        return;
+      }
+
       // 1. Check local client cache
       let localScan = await getScanFromClient(id);
-      if (!localScan && id === 'wellcore-creatine-analysis') {
-        localScan = WELLCORE_SCAN_FIXTURE as any;
-      }
       if (isMounted && localScan?.complianceResult) {
         setViolations(localScan.complianceResult.violations || []);
         setIsLoading(false);
@@ -38,17 +38,6 @@ export default function ViolationsPage() {
           const data = await res.json();
           if (isMounted && data.complianceResult) {
             setViolations(data.complianceResult.violations || []);
-          }
-        } else if (!localScan) {
-          if (id === 'wellcore-creatine-analysis') {
-            if (isMounted) setViolations(WELLCORE_SCAN_FIXTURE.complianceResult.violations || []);
-          } else {
-            const latest = await getScanFromClient('latest');
-            if (isMounted && latest?.complianceResult) {
-              setViolations(latest.complianceResult.violations || []);
-            } else if (isMounted && id === '1') {
-              setViolations(DEMO_REPORT.violations);
-            }
           }
         }
       } catch (err) {

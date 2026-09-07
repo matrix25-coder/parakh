@@ -7,8 +7,6 @@ import { PageHeader, StatusBadge, SeverityBadge, ConfidenceBadge } from '@/compo
 import type { RuleEvaluationDetail, ComplianceReport } from '@/lib/types';
 import type { BoundingBox } from '@/lib/extraction/types';
 import { getScanFromClient, saveScanToClient } from '@/lib/client-scan-cache';
-import { WELLCORE_SCAN_FIXTURE } from '@/lib/demo/wellcore-fixture';
-import { DEMO_REPORT } from '@/lib/demo/fixtures';
 
 interface PackageImageItem {
   face: string;
@@ -60,7 +58,7 @@ const STATUTORY_FIELD_CONFIG: Array<{
 
 export default function EvidenceViewerPage() {
   const params = useParams();
-  const id = (params?.id as string) || '1';
+  const id = (params?.id as string) || '';
 
   const [isLoading, setIsLoading] = useState(true);
   const [report, setReport] = useState<ComplianceReport | null>(null);
@@ -124,11 +122,14 @@ export default function EvidenceViewerPage() {
     setFetchError(null);
 
     async function loadEvidence() {
+      if (!id) {
+        setFetchError('No inspection scan ID provided.');
+        setIsLoading(false);
+        return;
+      }
+
       // 1. Check local client cache
       let localScan = await getScanFromClient(id);
-      if (!localScan && id === 'wellcore-creatine-analysis') {
-        localScan = WELLCORE_SCAN_FIXTURE as any;
-      }
       if (isMounted && localScan && localScan.complianceResult) {
         applyEvidenceData(localScan);
         setIsLoading(false);
@@ -144,23 +145,8 @@ export default function EvidenceViewerPage() {
             saveScanToClient(serverData);
           }
         } else if (!localScan) {
-          if (id === 'wellcore-creatine-analysis') {
-            if (isMounted) applyEvidenceData(WELLCORE_SCAN_FIXTURE);
-          } else {
-            const latest = await getScanFromClient('latest');
-            if (isMounted) {
-              if (latest?.complianceResult) {
-                applyEvidenceData(latest);
-              } else if (id === '1') {
-                applyEvidenceData({
-                  id: '1',
-                  image_path: '/uploads/sample_ghee.jpg',
-                  complianceResult: DEMO_REPORT,
-                });
-              } else {
-                setFetchError('Evidence record not found.');
-              }
-            }
+          if (isMounted) {
+            setFetchError('Evidence record not found.');
           }
         }
       } catch (err: any) {

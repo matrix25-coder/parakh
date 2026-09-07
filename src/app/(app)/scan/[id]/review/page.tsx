@@ -17,15 +17,13 @@ import {
   buildStatutoryFieldRows,
   type StatutoryFieldRow,
 } from '@/lib/client-scan-cache';
-import { WELLCORE_SCAN_FIXTURE } from '@/lib/demo/wellcore-fixture';
-import { DEMO_REPORT } from '@/lib/demo/fixtures';
 
 type FieldRow = StatutoryFieldRow;
 
 export default function ExtractionReviewPage() {
   const params = useParams();
   const router = useRouter();
-  const id = (params?.id as string) || '1';
+  const id = (params?.id as string) || '';
 
   const [isLoading, setIsLoading] = useState(true);
   const [productName, setProductName] = useState('Packaged Commodity');
@@ -36,6 +34,7 @@ export default function ExtractionReviewPage() {
   const [selectedField, setSelectedField] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const applyScanRecord = (data: any) => {
     setScanData(data);
@@ -58,13 +57,17 @@ export default function ExtractionReviewPage() {
   useEffect(() => {
     let isMounted = true;
     setIsLoading(true);
+    setFetchError(null);
 
     async function loadData() {
+      if (!id) {
+        setFetchError('No inspection scan ID provided.');
+        setIsLoading(false);
+        return;
+      }
+
       // 1. Check client storage first (instant zero-latency recovery)
       let localScan = await getScanFromClient(id);
-      if (!localScan && id === 'wellcore-creatine-analysis') {
-        localScan = WELLCORE_SCAN_FIXTURE as any;
-      }
       if (isMounted && localScan) {
         applyScanRecord(localScan);
         setIsLoading(false);
@@ -81,36 +84,15 @@ export default function ExtractionReviewPage() {
             saveScanToClient(serverData);
           }
         } else if (!localScan) {
-          // If server returns 404 and no local scan, use Wellcore or latest scan fallback
-          if (id === 'wellcore-creatine-analysis') {
-            if (isMounted) applyScanRecord(WELLCORE_SCAN_FIXTURE);
-          } else {
-            const latestScan = await getScanFromClient('latest');
-            if (isMounted) {
-              if (latestScan) {
-                applyScanRecord(latestScan);
-              } else {
-                applyScanRecord({
-                  id,
-                  product_name: DEMO_REPORT.product_name,
-                  category: DEMO_REPORT.category,
-                  extractedData: {
-                    manufacturer: 'NutriFoods India Pvt Ltd, Industrial Area, Pune 411018',
-                    commodityName: DEMO_REPORT.product_name,
-                    netQuantity: { value: 150, unit: 'g', raw: '150 g' },
-                    mrp: { value: 120, raw: '₹ 120.00 (Incl. of all taxes)' },
-                    manufacturingDate: { formatted: '08/2026', raw: '08/2026' },
-                    consumerCare: { raw: 'Tel: 1800-222-333' },
-                    countryOfOrigin: 'India',
-                  },
-                  complianceResult: DEMO_REPORT,
-                });
-              }
-            }
+          if (isMounted) {
+            setFetchError('Inspection scan record not found on server or local storage.');
           }
         }
-      } catch (err) {
+      } catch (err: any) {
         console.warn('Could not fetch scan data from server:', err);
+        if (!localScan && isMounted) {
+          setFetchError(err.message || 'Could not load scan record');
+        }
       } finally {
         if (isMounted) {
           setIsLoading(false);
@@ -242,6 +224,18 @@ export default function ExtractionReviewPage() {
       {submitError && (
         <div className="p-3 bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] text-xs font-mono">
           <strong>Notice: </strong> {submitError}
+        </div>
+      )}
+
+      {fetchError && !scanData && (
+        <div className="p-8 bg-white border border-[#CBD5E1] text-center space-y-3 font-mono text-xs text-[#B91C1C]">
+          <p className="font-bold">{fetchError}</p>
+          <Link
+            href="/scan"
+            className="inline-block px-4 py-2 bg-[#0A2540] text-white hover:bg-[#1E3A8A] transition-colors"
+          >
+            &larr; Return to Scanner
+          </Link>
         </div>
       )}
 
