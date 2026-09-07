@@ -16,8 +16,8 @@
 // When deploying to production, set this environment variable in your deployment environment or .env.local:
 // NEXT_PUBLIC_API_BASE_URL=https://YOUR-PARAKH-BACKEND
 export const API_CONFIG = {
-  // If NEXT_PUBLIC_API_BASE_URL is set, use it. Otherwise, default to empty string for relative paths.
-  baseUrl: (process.env.NEXT_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, ''),
+  // Configured with deployed PARAKH Vercel production server URL
+  baseUrl: (process.env.NEXT_PUBLIC_API_BASE_URL || 'https://parakh-three.vercel.app').trim().replace(/\/$/, ''),
   
   // Timeout for network inspection calls (60 seconds for multimodal OCR analysis)
   requestTimeoutMs: 60000,
