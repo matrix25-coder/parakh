@@ -43,6 +43,7 @@ export default function ScanProductPage() {
   const [geoCoords, setGeoCoords] = useState<{ latitude: number; longitude: number; altitude?: number; accuracy?: number } | null>(null);
   const [geoStatus, setGeoStatus] = useState<'idle' | 'acquiring' | 'locked' | 'denied' | 'unavailable'>('idle');
   const [showLocationPrompt, setShowLocationPrompt] = useState(false);
+  const [showLocationHelpModal, setShowLocationHelpModal] = useState(false);
   const executeExtractionRef = useRef<(coords: { latitude: number; longitude: number; altitude?: number; accuracy?: number } | null) => Promise<void>>(async () => {});
 
   const requestGeolocation = (andProceedToScan = false) => {
@@ -71,6 +72,7 @@ export default function ScanProductPage() {
         setGeoCoords(coords);
         setGeoStatus('locked');
         setShowLocationPrompt(false);
+        setShowLocationHelpModal(false);
         if (andProceedToScan) {
           executeExtractionRef.current(coords);
         }
@@ -101,6 +103,7 @@ export default function ScanProductPage() {
             setGeoCoords(coords);
             setGeoStatus('locked');
             setShowLocationPrompt(false);
+            setShowLocationHelpModal(false);
             if (andProceedToScan) {
               executeExtractionRef.current(coords);
             }
@@ -140,7 +143,35 @@ export default function ScanProductPage() {
         })
         .catch(() => {});
 
-      requestGeolocation();
+      // Monitor browser permission changes in real-time
+      if ('permissions' in navigator && navigator.permissions?.query) {
+        navigator.permissions
+          .query({ name: 'geolocation' as PermissionName })
+          .then((permissionStatus) => {
+            if (permissionStatus.state === 'granted') {
+              requestGeolocation();
+            } else if (permissionStatus.state === 'denied') {
+              setGeoStatus('denied');
+            } else {
+              requestGeolocation();
+            }
+
+            permissionStatus.onchange = () => {
+              if (permissionStatus.state === 'granted') {
+                requestGeolocation();
+              } else if (permissionStatus.state === 'denied') {
+                setGeoStatus('denied');
+              } else if (permissionStatus.state === 'prompt') {
+                setGeoStatus('idle');
+              }
+            };
+          })
+          .catch(() => {
+            requestGeolocation();
+          });
+      } else {
+        requestGeolocation();
+      }
     }
   }, []);
 
@@ -544,24 +575,25 @@ export default function ScanProductPage() {
 
       {/* ── REAL-TIME GEOLOCATION TELEMETRY STATUS BAR ── */}
       <div className="p-3.5 bg-white border border-[#CBD5E1] shadow-xs font-mono text-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div className="flex items-start sm:items-center gap-3">
             {geoStatus === 'acquiring' && (
-              <div className="flex items-center gap-2">
-                <span>🟡 Acquiring device location...</span>
+              <div className="flex items-center gap-2 text-[#B45309]">
+                <span className="w-3 h-3 border-2 border-[#B45309] border-t-transparent animate-spin inline-block"></span>
+                <span className="font-semibold">🟡 Acquiring genuine device coordinates...</span>
               </div>
             )}
 
             {geoStatus === 'locked' && geoCoords && (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                <span className="font-bold text-[#15803D]">
-                  🟢 Location captured
+                <span className="font-bold text-[#15803D] flex items-center gap-1">
+                  <span>🟢</span> Location captured
                 </span>
                 <span className="text-[#0A2540] font-semibold">
-                  Latitude: {geoCoords.latitude.toFixed(6)}°
+                  Lat: {geoCoords.latitude.toFixed(6)}°
                 </span>
                 <span className="text-[#0A2540] font-semibold">
-                  Longitude: {geoCoords.longitude.toFixed(6)}°
+                  Lng: {geoCoords.longitude.toFixed(6)}°
                 </span>
                 {geoCoords.accuracy !== undefined && (
                   <span className="text-[#475569]">
@@ -572,64 +604,106 @@ export default function ScanProductPage() {
             )}
 
             {geoStatus === 'denied' && (
-              <div className="space-y-0.5">
-                <div className="font-bold text-[#DC2626]">
-                  🔴 Location permission denied
+              <div className="space-y-1">
+                <div className="font-bold text-[#DC2626] flex items-center gap-1.5">
+                  <span>🔴</span> Location permission blocked by browser
                 </div>
-                <div className="text-[11px] text-[#991B1B]">
-                  Please allow location access in your browser settings.
+                <div className="text-[11px] text-[#7F1D1D] font-sans">
+                  Click the 🔒 or 🎛️ icon next to the address bar above to allow location, or proceed without location.
                 </div>
               </div>
             )}
 
             {geoStatus === 'unavailable' && (
-              <div className="space-y-0.5">
-                <div className="font-bold text-[#DC2626]">
-                  🔴 Location unavailable
+              <div className="space-y-1">
+                <div className="font-bold text-[#DC2626] flex items-center gap-1.5">
+                  <span>🔴</span> Location hardware sensor unavailable
                 </div>
-                <div className="text-[11px] text-[#64748B]">
-                  Unable to obtain a device location.
+                <div className="text-[11px] text-[#64748B] font-sans">
+                  Unable to obtain device coordinates. Inspection can proceed without location.
                 </div>
               </div>
             )}
 
             {geoStatus === 'idle' && (
               <div className="flex items-center gap-2 text-[#64748B]">
-                <span>⚪ Location access not yet acquired.</span>
+                <span>⚪ Location access not yet acquired. Click button to request browser permission.</span>
               </div>
             )}
           </div>
 
           <div className="flex items-center gap-2 shrink-0 flex-wrap">
-            {!geoCoords && (
+            {geoStatus === 'denied' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowLocationHelpModal(true)}
+                  className="px-3 py-1.5 bg-[#EFF6FF] hover:bg-[#DBEAFE] border border-[#93C5FD] text-[#1E40AF] font-bold text-xs cursor-pointer flex items-center gap-1.5 transition-colors shadow-2xs"
+                >
+                  <span>❓</span>
+                  <span>How to Unblock</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => requestGeolocation(false)}
+                  className="px-3 py-1.5 bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#CBD5E1] text-[#0A2540] font-bold text-xs cursor-pointer flex items-center gap-1.5 transition-colors"
+                  title="Click after changing permission in browser address bar"
+                >
+                  <span>🔄</span>
+                  <span>Retry</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const tabs = document.getElementById('capture-mode-tabs');
+                    tabs?.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  className="px-3.5 py-1.5 bg-[#0A2540] hover:bg-[#1E3A8A] text-white font-bold text-xs cursor-pointer flex items-center gap-1.5 transition-colors shadow-2xs"
+                >
+                  <span>⏩</span>
+                  <span>Proceed Without Location</span>
+                </button>
+              </>
+            ) : geoStatus === 'locked' && geoCoords ? (
               <button
                 type="button"
                 onClick={() => requestGeolocation(false)}
-                disabled={geoStatus === 'acquiring'}
-                className="px-3.5 py-1.5 bg-[#0A2540] hover:bg-[#1E3A8A] text-white font-bold text-xs cursor-pointer flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-2xs"
+                className="px-3.5 py-1.5 bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#CBD5E1] text-[#0A2540] font-bold text-xs cursor-pointer flex items-center gap-1.5 transition-colors"
               >
-                {geoStatus === 'acquiring' ? (
-                  <>
-                    <span className="w-3 h-3 border-2 border-white border-t-transparent animate-spin"></span>
-                    <span>Acquiring...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>📍</span>
-                    <span>Allow Location Access</span>
-                  </>
-                )}
+                <span>🔄</span>
+                <span>Refresh Location</span>
               </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => requestGeolocation(false)}
+                  disabled={geoStatus === 'acquiring'}
+                  className="px-3.5 py-1.5 bg-[#0A2540] hover:bg-[#1E3A8A] text-white font-bold text-xs cursor-pointer flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-2xs"
+                >
+                  {geoStatus === 'acquiring' ? (
+                    <>
+                      <span className="w-3 h-3 border-2 border-white border-t-transparent animate-spin"></span>
+                      <span>Acquiring...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>📍</span>
+                      <span>Allow Location Access</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => requestGeolocation(false)}
+                  disabled={geoStatus === 'acquiring'}
+                  className="px-3 py-1.5 bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#CBD5E1] text-[#0A2540] font-bold text-xs cursor-pointer flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                >
+                  <span>📍</span>
+                  <span>Acquire Device Location</span>
+                </button>
+              </>
             )}
-            <button
-              type="button"
-              onClick={() => requestGeolocation(false)}
-              disabled={geoStatus === 'acquiring'}
-              className="px-3 py-1.5 bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#CBD5E1] text-[#0A2540] font-bold text-xs cursor-pointer flex items-center gap-1.5 transition-colors disabled:opacity-50"
-            >
-              <span>📍</span>
-              <span>{geoCoords ? 'Refresh Location' : 'Acquire Device Location'}</span>
-            </button>
           </div>
         </div>
       </div>
@@ -639,7 +713,7 @@ export default function ScanProductPage() {
         {/* Left 65%: Image Capture Terminal */}
         <div className="lg:col-span-8 bg-white border border-[#CBD5E1] flex flex-col">
           {/* Capture Mode Tabs */}
-          <div className="flex border-b border-[#CBD5E1] bg-[#F8FAFC] font-mono text-xs overflow-x-auto scrollbar-none whitespace-nowrap">
+          <div id="capture-mode-tabs" className="flex border-b border-[#CBD5E1] bg-[#F8FAFC] font-mono text-xs overflow-x-auto scrollbar-none whitespace-nowrap">
             <button
               type="button"
               onClick={() => {
@@ -979,8 +1053,12 @@ export default function ScanProductPage() {
             </div>
 
             {images.length === 0 ? (
-              <div className="p-4 border border-dashed border-[#CBD5E1] text-center text-xs font-mono text-[#64748B] italic bg-white">
-                No images captured yet. Take a snapshot using the camera, select files to upload, or paste label declarations.
+              <div className="p-6 border-2 border-dashed border-[#CBD5E1] text-center text-xs font-mono bg-white space-y-1.5">
+                <div className="text-xl">📸</div>
+                <div className="font-bold text-[#0A2540]">No Inspection Images Attached Yet</div>
+                <p className="text-[#64748B] text-[11px] max-w-sm mx-auto">
+                  Take a photo using the camera tab, select an image file to upload, or paste packaged commodity label declarations above.
+                </p>
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -1091,9 +1169,21 @@ export default function ScanProductPage() {
           {/* Primary Action Button */}
           <div className="pt-4 border-t border-[#CBD5E1] space-y-2">
             <button
-              onClick={() => handleStartExtraction(false)}
-              disabled={isExtracting || images.length === 0}
-              className="w-full py-3.5 bg-[#0A2540] hover:bg-[#1E3A8A] text-white font-mono font-bold text-xs uppercase tracking-wider transition-colors border-t-2 border-t-[#EA580C] flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shadow-xs"
+              onClick={() => {
+                if (images.length === 0) {
+                  setScanError('Please capture or upload at least 1 image of the packaged commodity (e.g. Front/PDP or Back panel) to begin statutory inspection.');
+                  const tabs = document.getElementById('capture-mode-tabs');
+                  tabs?.scrollIntoView({ behavior: 'smooth' });
+                  return;
+                }
+                handleStartExtraction(false);
+              }}
+              disabled={isExtracting}
+              className={`w-full py-3.5 font-mono font-bold text-xs uppercase tracking-wider transition-colors border-t-2 flex items-center justify-center gap-2 cursor-pointer shadow-xs ${
+                images.length === 0
+                  ? 'bg-slate-200 hover:bg-slate-300 text-slate-600 border-t-slate-400'
+                  : 'bg-[#0A2540] hover:bg-[#1E3A8A] text-white border-t-[#EA580C]'
+              }`}
             >
               {isExtracting ? (
                 <>
@@ -1107,8 +1197,12 @@ export default function ScanProductPage() {
                 </>
               )}
             </button>
-            <p className="text-[10px] font-mono text-[#64748B] text-center">
-              {images.length === 0 ? 'Capture or select at least 1 image to begin' : 'Vision AI extracts coordinates • Rule Engine decides compliance'}
+            <p className="text-[10px] font-mono text-center">
+              {images.length === 0 ? (
+                <span className="text-[#DC2626] font-semibold">⚠️ 1 package image required (take photo or upload file)</span>
+              ) : (
+                <span className="text-[#15803D] font-semibold">✓ {images.length} package image(s) loaded • Ready to inspect</span>
+              )}
             </p>
           </div>
         </div>
@@ -1135,13 +1229,14 @@ export default function ScanProductPage() {
             </div>
 
             <p className="text-xs text-[#334155] font-sans leading-relaxed">
-              Device location is not yet acquired. Statutory Legal Metrology inspections require genuine device coordinates to establish court-admissible photographic evidence under Section 63 BSA / 65B IEA.
+              Device location is not yet acquired. Statutory Legal Metrology inspections record genuine device coordinates to establish court-admissible photographic evidence under Section 63 BSA / 65B IEA.
             </p>
 
             <div className="p-3 bg-[#F8FAFC] border border-[#CBD5E1] text-xs space-y-1">
               {geoStatus === 'acquiring' && (
-                <div className="text-[#B45309] font-bold">
-                  🟡 Acquiring device location...
+                <div className="text-[#B45309] font-bold flex items-center gap-2">
+                  <span className="w-3 h-3 border-2 border-[#B45309] border-t-transparent animate-spin inline-block"></span>
+                  <span>🟡 Acquiring device location...</span>
                 </div>
               )}
               {geoStatus === 'locked' && geoCoords && (
@@ -1150,10 +1245,10 @@ export default function ScanProductPage() {
                 </div>
               )}
               {geoStatus === 'denied' && (
-                <div className="space-y-0.5">
-                  <div className="text-[#DC2626] font-bold">🔴 Location permission denied</div>
-                  <div className="text-[11px] text-[#991B1B] font-sans">
-                    Please allow location access in your browser settings.
+                <div className="space-y-1">
+                  <div className="text-[#DC2626] font-bold">🔴 Location permission blocked in browser</div>
+                  <div className="text-[11px] text-[#7F1D1D] font-sans">
+                    Chrome / Edge has blocked location requests. Click the 🔒 or 🎛️ icon next to the address bar above to allow, or proceed without location.
                   </div>
                 </div>
               )}
@@ -1161,7 +1256,7 @@ export default function ScanProductPage() {
                 <div className="space-y-0.5">
                   <div className="text-[#DC2626] font-bold">🔴 Location unavailable</div>
                   <div className="text-[11px] text-[#64748B] font-sans">
-                    Unable to obtain a device location.
+                    Unable to obtain a device location. Inspection can proceed without location.
                   </div>
                 </div>
               )}
@@ -1173,31 +1268,173 @@ export default function ScanProductPage() {
             </div>
 
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-2 border-t border-[#CBD5E1]">
+              {geoStatus === 'denied' ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowLocationHelpModal(true)}
+                    className="px-3 py-2 border border-[#93C5FD] bg-[#EFF6FF] text-[#1E40AF] hover:bg-[#DBEAFE] text-xs font-semibold cursor-pointer transition-colors"
+                  >
+                    ❓ How to Unblock
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => executeExtraction(null)}
+                    className="px-4 py-2 bg-[#0A2540] hover:bg-[#1E3A8A] text-white text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+                  >
+                    ⏩ Proceed Without Location &amp; Start
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => executeExtraction(null)}
+                    className="px-3 py-2 border border-[#CBD5E1] text-[#64748B] hover:text-[#0A2540] hover:bg-[#F1F5F9] text-xs font-semibold cursor-pointer transition-colors"
+                  >
+                    Proceed without location
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => requestGeolocation(true)}
+                    disabled={geoStatus === 'acquiring'}
+                    className="px-4 py-2 bg-[#0A2540] hover:bg-[#1E3A8A] text-white text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 transition-colors shadow-2xs"
+                  >
+                    {geoStatus === 'acquiring' ? (
+                      <>
+                        <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent animate-spin"></span>
+                        <span>Acquiring & Starting...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>📍</span>
+                        <span>Acquire Location & Start Inspection</span>
+                      </>
+                    )}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Location Permission Unblock / Help Modal */}
+      {showLocationHelpModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 font-mono">
+          <div className="bg-white border-2 border-[#0A2540] max-w-lg w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in duration-150">
+            <div className="flex items-start justify-between border-b border-[#CBD5E1] pb-3">
+              <div className="flex items-center gap-2.5">
+                <span className="text-2xl">📍</span>
+                <div>
+                  <h3 className="font-bold text-[#0A2540] text-sm uppercase">
+                    How to Enable Device Location
+                  </h3>
+                  <p className="text-[11px] text-[#64748B] font-sans">
+                    Browser Location Permission &amp; GPS Diagnostics
+                  </p>
+                </div>
+              </div>
               <button
                 type="button"
-                onClick={() => executeExtraction(null)}
-                className="px-3 py-2 border border-[#CBD5E1] text-[#64748B] hover:text-[#0A2540] hover:bg-[#F1F5F9] text-xs font-semibold cursor-pointer transition-colors"
+                onClick={() => setShowLocationHelpModal(false)}
+                className="text-[#64748B] hover:text-[#0A2540] font-bold text-lg cursor-pointer p-1"
+                title="Close"
               >
-                Proceed without location
+                ✕
               </button>
+            </div>
+
+            <div className="space-y-3 text-xs font-sans text-[#334155]">
+              <div className="p-3 bg-[#FEF2F2] border-l-4 border-l-[#DC2626] border border-[#FECACA] rounded-xs space-y-1">
+                <div className="font-bold text-[#991B1B] font-mono text-xs flex items-center gap-1.5">
+                  <span>🔒 Why did the browser not show a permission popup?</span>
+                </div>
+                <p className="text-[11px] text-[#7F1D1D] leading-relaxed">
+                  Your browser (Chrome / Edge) currently has location set to <strong>&ldquo;Block&rdquo;</strong> for this site. Modern browsers forbid websites from automatically re-prompting when blocked.
+                </p>
+              </div>
+
+              <div className="border border-[#CBD5E1] p-3.5 bg-[#F8FAFC] space-y-2">
+                <div className="font-mono font-bold text-xs uppercase text-[#0A2540] tracking-wider">
+                  Quick 10-Second Fix in Chrome / Edge:
+                </div>
+                <ol className="space-y-2 text-xs list-decimal pl-4 text-[#1E293B]">
+                  <li>
+                    Look at the <strong>address bar (URL bar)</strong> at the very top of your browser window where it shows <code className="bg-slate-200 px-1 py-0.5 rounded text-[11px] font-mono">localhost:3000</code>.
+                  </li>
+                  <li>
+                    Click the <strong>tune / settings icon (🎛️)</strong> or <strong>padlock (🔒)</strong> directly to the left of the address.
+                  </li>
+                  <li>
+                    Find <strong>&ldquo;Location&rdquo;</strong> and toggle it to <strong>&ldquo;Allow&rdquo;</strong> (or click <em>Reset permission</em>).
+                  </li>
+                  <li>
+                    Click the <strong>&ldquo;Re-check Permission&rdquo;</strong> button below (or refresh the page).
+                  </li>
+                </ol>
+              </div>
+
+              <div className="p-2.5 bg-amber-50 border border-amber-200 text-amber-900 text-[11px] space-y-1">
+                <div className="font-bold flex items-center gap-1">
+                  <span>💻 Windows 10/11 Setting Note:</span>
+                </div>
+                <p>
+                  If you are on a Windows PC and location still does not lock, ensure <strong>Windows Settings → Privacy &amp; security → Location → Location services</strong> is toggled <strong>ON</strong>.
+                </p>
+              </div>
+
+              <div className="p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-900 text-[11px] space-y-1">
+                <div className="font-bold flex items-center gap-1">
+                  <span>✅ Statutory Inspections Work Without Location:</span>
+                </div>
+                <p>
+                  Legal Metrology inspections can proceed completely without GPS coordinates. If you do not wish to enable location, click below to proceed. The report will record <em>&ldquo;Location unavailable&rdquo;</em> under Section 63 BSA.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-3 border-t border-[#CBD5E1]">
               <button
                 type="button"
-                onClick={() => requestGeolocation(true)}
-                disabled={geoStatus === 'acquiring'}
-                className="px-4 py-2 bg-[#0A2540] hover:bg-[#1E3A8A] text-white text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 transition-colors"
+                onClick={() => {
+                  setShowLocationHelpModal(false);
+                  const uploadSection = document.getElementById('capture-mode-tabs');
+                  uploadSection?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="px-3 py-2 border border-[#CBD5E1] text-[#0A2540] hover:bg-[#F1F5F9] text-xs font-semibold cursor-pointer transition-colors"
               >
-                {geoStatus === 'acquiring' ? (
-                  <>
-                    <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent animate-spin"></span>
-                    <span>Acquiring & Starting...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>📍</span>
-                    <span>Acquire Location & Start Inspection</span>
-                  </>
-                )}
+                ⏩ Continue Without Location
               </button>
+              <div className="flex items-center gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowLocationHelpModal(false)}
+                  className="px-3 py-2 border border-[#CBD5E1] text-[#64748B] hover:text-[#0A2540] text-xs font-semibold cursor-pointer transition-colors"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    requestGeolocation(false);
+                  }}
+                  disabled={geoStatus === 'acquiring'}
+                  className="px-4 py-2 bg-[#0A2540] hover:bg-[#1E3A8A] text-white text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 transition-colors shadow-2xs"
+                >
+                  {geoStatus === 'acquiring' ? (
+                    <>
+                      <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent animate-spin"></span>
+                      <span>Checking...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>🔄</span>
+                      <span>Re-check Permission</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
