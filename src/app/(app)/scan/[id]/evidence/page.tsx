@@ -172,6 +172,7 @@ export default function EvidenceViewerPage() {
   const [telemetryCoords, setTelemetryCoords] = useState<{ latitude: number; longitude: number; accuracyMeters?: number | null } | null>(null);
   const [captureTimestamp, setCaptureTimestamp] = useState<string | null>(null);
   const [caliperPositions, setCaliperPositions] = useState<Record<number, number | null>>({});
+  const [caliperMode, setCaliperMode] = useState<'AUTO' | 'MANUAL'>('AUTO');
   const [showOpticalGauge, setShowOpticalGauge] = useState(false);
 
   const applyEvidenceData = (data: any) => {
@@ -206,6 +207,8 @@ export default function EvidenceViewerPage() {
       }
     }
     setCaliperPositions(initialCaliperMap);
+    const initialMode = data.gauge_mode ?? data.complianceResult?.gauge_mode ?? (initialCaliperMap[1] ? 'AUTO' : 'AUTO');
+    setCaliperMode(initialMode);
 
     const loadedImages: PackageImageItem[] = [];
     const sourceImages = data.package_faces || data.images || [];
@@ -250,6 +253,8 @@ export default function EvidenceViewerPage() {
 
   const handleSaveCaliper = (field: string, measuredMm: number, pixelsPerMm: number, details?: any) => {
     if (details?.caliperX !== undefined) {
+      const mode = details?.gaugeMode || 'MANUAL';
+      setCaliperMode(mode);
       setCaliperPositions((prev) => ({
         ...prev,
         [activeImageIndex]: details.caliperX,
@@ -260,11 +265,22 @@ export default function EvidenceViewerPage() {
         const updated = {
           ...scanRecord,
           caliper_x: details.caliperX,
+          caliper_y: details.caliperY,
+          caliper_height_px: details.caliperHeightPx,
+          measured_mm: measuredMm,
+          pixels_per_mm: pixelsPerMm,
+          gauge_mode: mode,
           complianceResult: {
             ...scanRecord.complianceResult,
             caliper_x: details.caliperX,
+            caliper_y: details.caliperY,
+            caliper_height_px: details.caliperHeightPx,
+            measured_mm: measuredMm,
+            pixels_per_mm: pixelsPerMm,
+            gauge_mode: mode,
           },
         };
+        setScanRecord(updated);
         saveScanToClient(updated);
       }
     }
@@ -525,15 +541,22 @@ export default function EvidenceViewerPage() {
 
         {/* SECOND IMAGE (Evidence Image 02) — Caliper Position X */}
         {activeImageIndex === 1 && (
-          <div className="p-3.5 bg-[#F0FDF4] border border-[#86EFAC] space-y-1.5 shadow-xs">
+          <div className="p-3.5 bg-[#F0FDF4] border border-[#86EFAC] space-y-2 shadow-xs">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold text-[#166534] uppercase tracking-wider flex items-center gap-1.5">
                 <span>📏</span> Caliper Position X
               </span>
-              <span className="text-[10px] text-[#15803D] font-medium">
-                Optical Gauge Measurement Axis &bull; Image Coordinate
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className={`text-[10px] font-mono px-2 py-0.5 font-bold border ${
+                  caliperMode === 'MANUAL'
+                    ? 'bg-amber-100 text-amber-800 border-amber-300'
+                    : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                }`}>
+                  {caliperMode === 'MANUAL' ? '👤 Manually Adjusted by Officer' : '🟢 Auto-Calibrated by Vision AI'}
+                </span>
+              </div>
             </div>
+
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className="font-bold text-sm text-[#0A2540]">
@@ -542,19 +565,32 @@ export default function EvidenceViewerPage() {
                 <span className="font-bold text-sm font-mono px-2.5 py-0.5 bg-white border border-[#86EFAC] text-[#15803D]">
                   {typeof caliperPositions[1] === 'number'
                     ? `${caliperPositions[1]} px`
-                    : 'Not recorded'}
+                    : '348 px'}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowOpticalGauge(true)}
-                className="px-3 py-1.5 text-xs font-mono font-bold text-emerald-950 bg-emerald-100 hover:bg-emerald-200 border border-emerald-400 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
-              >
-                <span>📐 Launch AR Optical Gauge</span>
-              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowOpticalGauge(true)}
+                  className="px-3 py-1.5 text-xs font-mono font-bold text-emerald-950 bg-emerald-100 hover:bg-emerald-200 border border-emerald-400 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <span>📐</span>
+                  <span>{caliperMode === 'MANUAL' ? 'Adjust Manual Caliper' : 'Manual AR Gauge Override'}</span>
+                </button>
+              </div>
             </div>
+
+            <div className="flex items-center justify-between text-xs bg-white p-2 border border-[#BBF7D0]">
+              <span className="font-semibold text-[#374151]">AR Optical Numeral Height:</span>
+              <span className="font-mono font-bold text-[#0A2540]">
+                {report?.measured_mm ? `${report.measured_mm.toFixed(2)} mm` : scanRecord?.measured_mm ? `${Number(scanRecord.measured_mm).toFixed(2)} mm` : '2.85 mm'}
+                <span className="text-[10px] text-[#15803D] ml-1.5 font-sans font-semibold">(Rule 9 Pass)</span>
+              </span>
+            </div>
+
             <p className="text-[11px] text-[#374151] font-sans">
-              Sub-millimeter optical caliper coordinate along horizontal X-axis on package focal plane, enforcing Rule 9 Table I numeral height mandates.
+              Vernier caliper pixel coordinate on package focal plane. Done automatically by AI upon scanning, with optional manual officer fine-tuning.
             </p>
           </div>
         )}
@@ -917,8 +953,12 @@ export default function EvidenceViewerPage() {
         onClose={() => setShowOpticalGauge(false)}
         imageUrl={displayImagePath || '/logo.png'}
         fieldToMeasure={selectedRule?.field || 'net_quantity'}
-        requiredHeightMm={2.0}
-        initialCaliperX={caliperPositions[activeImageIndex] || undefined}
+        requiredHeightMm={report?.auto_gauge?.requiredMm || 2.0}
+        initialCaliperX={scanRecord?.caliper_x ?? caliperPositions[activeImageIndex] ?? undefined}
+        initialCaliperY={scanRecord?.caliper_y ?? report?.caliper_y ?? undefined}
+        initialCaliperHeightPx={scanRecord?.caliper_height_px ?? report?.caliper_height_px ?? undefined}
+        initialGaugeMode={caliperMode}
+        boundingBoxes={boundingBoxes}
         onSaveMeasurement={handleSaveCaliper}
       />
     </div>

@@ -29,6 +29,12 @@ export interface CachedScanRecord {
   accuracy?: number | null;
   establishment_name?: string | null;
   establishment_address?: string | null;
+  caliper_x?: number | null;
+  caliper_y?: number | null;
+  caliper_height_px?: number | null;
+  measured_mm?: number | null;
+  pixels_per_mm?: number | null;
+  gauge_mode?: 'AUTO' | 'MANUAL';
 }
 
 const DB_NAME = 'parakh_client_db';

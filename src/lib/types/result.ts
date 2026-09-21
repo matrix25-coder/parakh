@@ -71,5 +71,10 @@ export interface ComplianceReport {
   forensic_manifest?: any;
   caliper_x?: number | null;
   caliper_y?: number | null;
+  caliper_height_px?: number | null;
+  measured_mm?: number | null;
+  pixels_per_mm?: number | null;
+  gauge_mode?: 'AUTO' | 'MANUAL';
+  auto_gauge?: any;
 }
 

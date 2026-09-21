@@ -7,6 +7,7 @@ import {
   calibrateFromCoin,
   calibrateFromCard,
   CalibrationResult,
+  autoPerformOpticalGauge,
 } from '@/lib/vision/optical-gauge';
 
 export interface CaliperDetails {
@@ -15,6 +16,8 @@ export interface CaliperDetails {
   caliperHeightPx: number;
   measuredMm: number;
   pixelsPerMm: number;
+  gaugeMode?: 'AUTO' | 'MANUAL';
+  targetType?: ReferenceTargetType;
 }
 
 export interface OpticalGaugeModalProps {
@@ -25,6 +28,9 @@ export interface OpticalGaugeModalProps {
   requiredHeightMm?: number;
   initialCaliperX?: number;
   initialCaliperY?: number;
+  initialCaliperHeightPx?: number;
+  initialGaugeMode?: 'AUTO' | 'MANUAL';
+  boundingBoxes?: Record<string, any>;
   onSaveMeasurement: (
     field: string,
     measuredMm: number,
@@ -41,24 +47,76 @@ export function OpticalGaugeModal({
   requiredHeightMm = 2.0,
   initialCaliperX,
   initialCaliperY,
+  initialCaliperHeightPx,
+  initialGaugeMode = 'AUTO',
+  boundingBoxes = {},
   onSaveMeasurement,
 }: OpticalGaugeModalProps) {
+  const [mode, setMode] = useState<'AUTO' | 'MANUAL'>(initialGaugeMode);
   const [targetType, setTargetType] = useState<ReferenceTargetType>('RS5_COIN');
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  // Compute auto coordinates initially
+  const defaultAuto = autoPerformOpticalGauge({
+    boundingBoxes,
+    canvasWidth: 800,
+    canvasHeight: 500,
+  });
+
   // Calibration tool position in canvas coords
-  const [refX, setRefX] = useState<number>(80);
-  const [refY, setRefY] = useState<number>(80);
-  const [refSize, setRefSize] = useState<number>(100); // diameter for coin, width for card
+  const [refX, setRefX] = useState<number>(defaultAuto.refX || 80);
+  const [refY, setRefY] = useState<number>(defaultAuto.refY || 80);
+  const [refSize, setRefSize] = useState<number>(defaultAuto.refSize || 92); // diameter for coin, width for card
 
   // Measurement caliper position
-  const [caliperX, setCaliperX] = useState<number>(initialCaliperX || 300);
-  const [caliperY, setCaliperY] = useState<number>(initialCaliperY || 200);
-  const [caliperHeightPx, setCaliperHeightPx] = useState<number>(24);
+  const [caliperX, setCaliperX] = useState<number>(initialCaliperX || defaultAuto.caliperX || 348);
+  const [caliperY, setCaliperY] = useState<number>(initialCaliperY || defaultAuto.caliperY || 240);
+  const [caliperHeightPx, setCaliperHeightPx] = useState<number>(initialCaliperHeightPx || defaultAuto.caliperHeightPx || 26);
 
   const [calibration, setCalibration] = useState<CalibrationResult | null>(null);
   const [activeDrag, setActiveDrag] = useState<'NONE' | 'REF_MOVE' | 'REF_RESIZE' | 'CALIPER_MOVE' | 'CALIPER_RESIZE'>('NONE');
   const [dragStartY, setDragStartY] = useState<number>(0);
+
+  // Sync state when modal opens with new or updated props
+  useEffect(() => {
+    if (isOpen) {
+      if (initialGaugeMode) setMode(initialGaugeMode);
+      if (initialCaliperX !== undefined) setCaliperX(initialCaliperX);
+      if (initialCaliperY !== undefined) setCaliperY(initialCaliperY);
+      if (initialCaliperHeightPx !== undefined) setCaliperHeightPx(initialCaliperHeightPx);
+      if (!initialCaliperX) {
+        const auto = autoPerformOpticalGauge({
+          boundingBoxes,
+          canvasWidth: 800,
+          canvasHeight: 500,
+        });
+        setCaliperX(auto.caliperX);
+        setCaliperY(auto.caliperY);
+        setCaliperHeightPx(auto.caliperHeightPx);
+        setRefSize(auto.refSize);
+        setRefX(auto.refX);
+        setRefY(auto.refY);
+        setTargetType(auto.referenceTarget);
+      }
+    }
+  }, [isOpen, initialCaliperX, initialCaliperY, initialCaliperHeightPx, initialGaugeMode]);
+
+  // Auto-align caliper and reference reticle based on AI bounding boxes
+  const handleAutoDetect = () => {
+    const auto = autoPerformOpticalGauge({
+      boundingBoxes,
+      canvasWidth: canvasRef.current?.width || 800,
+      canvasHeight: canvasRef.current?.height || 500,
+    });
+    setMode('AUTO');
+    setCaliperX(auto.caliperX);
+    setCaliperY(auto.caliperY);
+    setCaliperHeightPx(auto.caliperHeightPx);
+    setRefSize(auto.refSize);
+    setRefX(auto.refX);
+    setRefY(auto.refY);
+    setTargetType(auto.referenceTarget);
+  };
 
   // Compute calibration on size change
   useEffect(() => {
@@ -137,8 +195,9 @@ export function OpticalGaugeModal({
       ctx.save();
       const calX = caliperX;
       const calW = 160;
-      ctx.strokeStyle = '#10B981'; // Emerald
-      ctx.lineWidth = 2;
+      const isAuto = mode === 'AUTO';
+      ctx.strokeStyle = isAuto ? '#10B981' : '#F59E0B'; // Emerald for Auto, Amber for Manual
+      ctx.lineWidth = 2.5;
 
       // Top bar
       ctx.beginPath();
@@ -153,18 +212,19 @@ export function OpticalGaugeModal({
       ctx.stroke();
 
       // Caliper background
-      ctx.fillStyle = 'rgba(16, 185, 129, 0.15)';
+      ctx.fillStyle = isAuto ? 'rgba(16, 185, 129, 0.18)' : 'rgba(245, 158, 11, 0.18)';
       ctx.fillRect(calX - calW / 2, caliperY, calW, caliperHeightPx);
 
       // Reading badge
       const measuredMm = calibration?.pixelsPerMm ? Math.round((caliperHeightPx / calibration.pixelsPerMm) * 100) / 100 : 0;
-      ctx.fillStyle = '#10B981';
+      ctx.fillStyle = isAuto ? '#10B981' : '#F59E0B';
       ctx.font = 'bold 12px monospace';
-      ctx.fillText(`CALIPER: ${measuredMm.toFixed(2)} mm (X:${calX}px, Y:${caliperY}px)`, Math.max(10, calX - 70), caliperY - 8);
+      const modeTag = isAuto ? '🟢 AUTO' : '✏️ MANUAL';
+      ctx.fillText(`${modeTag} CALIPER: ${measuredMm.toFixed(2)} mm (X:${calX}px, Y:${caliperY}px)`, Math.max(10, calX - 85), caliperY - 8);
       ctx.restore();
     };
     img.src = imageUrl;
-  }, [isOpen, imageUrl, targetType, refX, refY, refSize, caliperX, caliperY, caliperHeightPx, calibration]);
+  }, [isOpen, imageUrl, targetType, refX, refY, refSize, caliperX, caliperY, caliperHeightPx, calibration, mode]);
 
   if (!isOpen) return null;
 
@@ -174,18 +234,71 @@ export function OpticalGaugeModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-      <div className="bg-[#0A2540] border-2 border-[#EA580C] text-white max-w-4xl w-full p-5 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+      <div className="bg-[#0A2540] border-2 border-[#EA580C] text-white max-w-4xl w-full p-5 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto font-mono">
         {/* Header */}
         <div className="flex items-start justify-between border-b border-slate-700 pb-3">
           <div>
-            <h3 className="font-mono font-bold text-base text-white flex items-center gap-2">
-              <span className="text-[#EA580C]">📐</span> AR Optical Calibration Gauge (Rule 9 Table I)
-            </h3>
-            <p className="text-xs text-slate-300 font-mono mt-0.5">
-              Calibrate sub-millimeter scale using a standard reference coin or ID card in the package focal plane.
+            <div className="flex items-center gap-2">
+              <span className="text-[#EA580C] text-lg">📐</span>
+              <h3 className="font-bold text-base text-white uppercase">
+                AR Optical Calibration Gauge (Rule 9 Table I)
+              </h3>
+              <span className={`px-2 py-0.5 text-[10px] font-bold border ${
+                mode === 'AUTO'
+                  ? 'bg-emerald-950 text-emerald-300 border-emerald-500'
+                  : 'bg-amber-950 text-amber-300 border-amber-500'
+              }`}>
+                {mode === 'AUTO' ? '🟢 Auto AI Mode' : '✏️ Officer Manual Mode'}
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 font-sans mt-1">
+              Sub-millimeter numeral height measurement. Gauge operates automatically by AI vision, and can be manually adjusted or fine-tuned at any time.
             </p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white font-mono font-bold text-lg">✕</button>
+          <button onClick={onClose} className="text-slate-400 hover:text-white font-bold text-lg cursor-pointer">✕</button>
+        </div>
+
+        {/* Mode Selector & Quick Action Toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-slate-900/90 border border-slate-700 text-xs">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-slate-400 text-[10px] uppercase font-bold">Measurement Mode:</span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={handleAutoDetect}
+                className={`px-3 py-1 font-bold text-xs border transition-colors flex items-center gap-1.5 cursor-pointer ${
+                  mode === 'AUTO'
+                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
+                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                }`}
+              >
+                <span>🟢</span>
+                <span>Auto-Calibrated (Done by Itself)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('MANUAL')}
+                className={`px-3 py-1 font-bold text-xs border transition-colors flex items-center gap-1.5 cursor-pointer ${
+                  mode === 'MANUAL'
+                    ? 'bg-amber-500/20 border-amber-400 text-amber-300'
+                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                }`}
+              >
+                <span>✏️</span>
+                <span>Manual Mode (Officer Control)</span>
+              </button>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleAutoDetect}
+            className="px-3 py-1.5 bg-[#EA580C] hover:bg-orange-600 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+            title="Auto-detect numeral coordinates and align caliper automatically"
+          >
+            <span>⚡</span>
+            <span>Auto-Align Caliper</span>
+          </button>
         </div>
 
         {/* Reference Target Selector */}
@@ -248,7 +361,10 @@ export function OpticalGaugeModal({
               min={30}
               max={300}
               value={refSize}
-              onChange={(e) => setRefSize(parseInt(e.target.value))}
+              onChange={(e) => {
+                setMode('MANUAL');
+                setRefSize(parseInt(e.target.value));
+              }}
               className="w-full accent-amber-500"
             />
             <div className="flex justify-between text-[10px] text-slate-400">
@@ -258,7 +374,10 @@ export function OpticalGaugeModal({
                 min={20}
                 max={500}
                 value={refX}
-                onChange={(e) => setRefX(parseInt(e.target.value))}
+                onChange={(e) => {
+                  setMode('MANUAL');
+                  setRefX(parseInt(e.target.value));
+                }}
                 className="w-24 accent-slate-400"
               />
               <span>Position Y:</span>
@@ -267,7 +386,10 @@ export function OpticalGaugeModal({
                 min={20}
                 max={400}
                 value={refY}
-                onChange={(e) => setRefY(parseInt(e.target.value))}
+                onChange={(e) => {
+                  setMode('MANUAL');
+                  setRefY(parseInt(e.target.value));
+                }}
                 className="w-24 accent-slate-400"
               />
             </div>
@@ -283,7 +405,10 @@ export function OpticalGaugeModal({
               min={5}
               max={100}
               value={caliperHeightPx}
-              onChange={(e) => setCaliperHeightPx(parseInt(e.target.value))}
+              onChange={(e) => {
+                setMode('MANUAL');
+                setCaliperHeightPx(parseInt(e.target.value));
+              }}
               className="w-full accent-emerald-500"
             />
             <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-400 pt-1">
@@ -294,7 +419,10 @@ export function OpticalGaugeModal({
                   min={20}
                   max={600}
                   value={caliperX}
-                  onChange={(e) => setCaliperX(parseInt(e.target.value))}
+                  onChange={(e) => {
+                    setMode('MANUAL');
+                    setCaliperX(parseInt(e.target.value));
+                  }}
                   className="w-20 sm:w-24 accent-emerald-400"
                 />
                 <span className="text-white font-mono text-[9px] w-8 text-right">{caliperX}px</span>
@@ -306,7 +434,10 @@ export function OpticalGaugeModal({
                   min={20}
                   max={450}
                   value={caliperY}
-                  onChange={(e) => setCaliperY(parseInt(e.target.value))}
+                  onChange={(e) => {
+                    setMode('MANUAL');
+                    setCaliperY(parseInt(e.target.value));
+                  }}
                   className="w-20 sm:w-24 accent-slate-400"
                 />
                 <span className="text-white font-mono text-[9px] w-8 text-right">{caliperY}px</span>
@@ -322,6 +453,15 @@ export function OpticalGaugeModal({
             : 'bg-rose-950/60 border-rose-500 text-rose-200'
         }`}>
           <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 border ${
+                mode === 'AUTO'
+                  ? 'bg-emerald-900/80 text-emerald-300 border-emerald-500'
+                  : 'bg-amber-900/80 text-amber-300 border-amber-500'
+              }`}>
+                {mode === 'AUTO' ? '🟢 Automated AI Measurement' : '👤 Officer Manual Adjustment'}
+              </span>
+            </div>
             <div className="font-bold text-sm flex items-center gap-1.5">
               <span>{isCompliant ? '✅ STATUTORY PASS' : '❌ STATUTORY VIOLATION'}</span>
               <span className="text-xs font-normal">
@@ -338,7 +478,7 @@ export function OpticalGaugeModal({
           <div className="flex gap-2">
             <button
               onClick={onClose}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-xs border border-slate-600"
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-xs border border-slate-600 cursor-pointer"
             >
               Cancel
             </button>
@@ -350,10 +490,12 @@ export function OpticalGaugeModal({
                   caliperHeightPx,
                   measuredMm,
                   pixelsPerMm,
+                  gaugeMode: mode,
+                  targetType,
                 });
                 onClose();
               }}
-              className="px-4 py-1.5 bg-[#EA580C] hover:bg-orange-600 text-white font-mono font-bold text-xs"
+              className="px-4 py-1.5 bg-[#EA580C] hover:bg-orange-600 text-white font-mono font-bold text-xs cursor-pointer shadow-xs"
             >
               Apply Measurement to Dossier
             </button>
