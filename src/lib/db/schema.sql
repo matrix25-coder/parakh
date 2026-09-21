@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS scan_history (
   longitude REAL,
   altitude REAL,
   accuracy_meters REAL,
+  establishment_name TEXT,
+  establishment_address TEXT,
   created_at TEXT NOT NULL,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );

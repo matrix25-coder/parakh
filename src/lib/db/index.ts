@@ -125,8 +125,42 @@ export function getDb(): DatabaseSync {
     initInlineSchema(db);
   }
 
+  // Ensure all columns exist on pre-existing database files
+  runAutomaticMigrations(db);
+
   dbInstance = db;
   return dbInstance;
+}
+
+function runAutomaticMigrations(db: DatabaseSync): void {
+  try {
+    const tableInfo = db.prepare('PRAGMA table_info(scan_history)').all() as Array<{ name: string }>;
+    const existingColumns = new Set(tableInfo.map((col) => col.name.toLowerCase()));
+
+    const columnsToAdd: Array<{ name: string; type: string }> = [
+      { name: 'latitude', type: 'REAL' },
+      { name: 'longitude', type: 'REAL' },
+      { name: 'altitude', type: 'REAL' },
+      { name: 'accuracy_meters', type: 'REAL' },
+      { name: 'establishment_name', type: 'TEXT' },
+      { name: 'establishment_address', type: 'TEXT' },
+    ];
+
+    for (const col of columnsToAdd) {
+      if (!existingColumns.has(col.name.toLowerCase())) {
+        try {
+          db.exec(`ALTER TABLE scan_history ADD COLUMN ${col.name} ${col.type};`);
+        } catch {}
+      }
+    }
+  } catch {
+    try { db.exec('ALTER TABLE scan_history ADD COLUMN latitude REAL;'); } catch {}
+    try { db.exec('ALTER TABLE scan_history ADD COLUMN longitude REAL;'); } catch {}
+    try { db.exec('ALTER TABLE scan_history ADD COLUMN altitude REAL;'); } catch {}
+    try { db.exec('ALTER TABLE scan_history ADD COLUMN accuracy_meters REAL;'); } catch {}
+    try { db.exec('ALTER TABLE scan_history ADD COLUMN establishment_name TEXT;'); } catch {}
+    try { db.exec('ALTER TABLE scan_history ADD COLUMN establishment_address TEXT;'); } catch {}
+  }
 }
 
 function initInlineSchema(db: DatabaseSync): void {
@@ -160,18 +194,14 @@ function initInlineSchema(db: DatabaseSync): void {
         longitude REAL,
         altitude REAL,
         accuracy_meters REAL,
+        establishment_name TEXT,
+        establishment_address TEXT,
         created_at TEXT NOT NULL,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
       CREATE INDEX IF NOT EXISTS idx_scan_history_user_id ON scan_history(user_id);
       CREATE INDEX IF NOT EXISTS idx_scan_history_created_at ON scan_history(created_at DESC);
     `);
-
-  // Safe migration for existing SQLite files missing the location columns
-  try { db.exec('ALTER TABLE scan_history ADD COLUMN latitude REAL;'); } catch {}
-  try { db.exec('ALTER TABLE scan_history ADD COLUMN longitude REAL;'); } catch {}
-  try { db.exec('ALTER TABLE scan_history ADD COLUMN altitude REAL;'); } catch {}
-  try { db.exec('ALTER TABLE scan_history ADD COLUMN accuracy_meters REAL;'); } catch {}
 }
 
 // ── USER REPOSITORY ──────────────────────────────────────────────────────────
@@ -259,8 +289,8 @@ export function createScan(params: CreateScanParams): ScanRecord {
     INSERT INTO scan_history (
       id, user_id, product_name, category, is_imported, country_of_origin,
       image_path, package_faces, raw_ocr_text, extracted_data, compliance_result,
-      overall_status, violations_count, inspector_name, latitude, longitude, altitude, accuracy_meters, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      overall_status, violations_count, inspector_name, latitude, longitude, altitude, accuracy_meters, establishment_name, establishment_address, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -282,6 +312,8 @@ export function createScan(params: CreateScanParams): ScanRecord {
     params.longitude ?? null,
     params.altitude ?? null,
     params.accuracyMeters ?? null,
+    params.establishmentName || null,
+    params.establishmentAddress || null,
     now
   );
 
@@ -304,6 +336,8 @@ export function createScan(params: CreateScanParams): ScanRecord {
     longitude: params.longitude ?? null,
     altitude: params.altitude ?? null,
     accuracy_meters: params.accuracyMeters ?? null,
+    establishment_name: params.establishmentName || null,
+    establishment_address: params.establishmentAddress || null,
     created_at: now,
   };
 
