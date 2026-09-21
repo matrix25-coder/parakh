@@ -13,6 +13,8 @@ export interface StatutoryNoticeModalProps {
   establishmentAddress?: string;
   inspectorName?: string;
   manifest?: any;
+  initialCompoundingFine?: number;
+  initialOffenceType?: string;
 }
 
 export function StatutoryNoticeModal({
@@ -23,11 +25,25 @@ export function StatutoryNoticeModal({
   establishmentAddress = 'Retail Premise under Inspection',
   inspectorName = 'Field Inspection Officer',
   manifest,
+  initialCompoundingFine,
+  initialOffenceType,
 }: StatutoryNoticeModalProps) {
   const [estName, setEstName] = useState(establishmentName);
   const [estAddress, setEstAddress] = useState(establishmentAddress);
   const [proprietor, setProprietor] = useState('Store Manager / Proprietor');
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
+  const isDefaultRepeat = report?.violations ? report.violations.length >= 3 : false;
+  const defaultFee = initialCompoundingFine ?? (isDefaultRepeat ? 50000 : 25000);
+  const defaultType = initialOffenceType ?? (isDefaultRepeat ? 'REPEAT_OFFENCE' : 'FIRST_OFFENCE');
+  const defaultProvision = isDefaultRepeat
+    ? 'Section 36(2) Enhanced Compounding, Legal Metrology Act, 2009'
+    : 'Section 36(1) r/w Section 48 (Compounding of Offenses), Legal Metrology Act, 2009';
+
+  const [fineAmount, setFineAmount] = useState<number | string>(defaultFee);
+  const [offenceType, setOffenceType] = useState<string>(defaultType);
+  const [legalProvision, setLegalProvision] = useState<string>(defaultProvision);
+  const [isEditingFine, setIsEditingFine] = useState(false);
 
   if (!isOpen) return null;
 
@@ -40,7 +56,7 @@ export function StatutoryNoticeModal({
     },
     manifest,
     inspectorName,
-    report.violations.length >= 3
+    report.violations?.length ? report.violations.length >= 3 : false
   );
 
   const handleDownloadPdf = () => {
@@ -133,10 +149,11 @@ export function StatutoryNoticeModal({
       doc.rect(20, y, 170, 18, 'F');
       doc.setFont('times', 'bold');
       doc.setTextColor(190, 60, 20);
-      doc.text(`STATUTORY COMPOUNDING FINE TIER: ₹ ${noticeData.feeCalculation.totalCompoundingFeeInr.toLocaleString('en-IN')}`, 24, y + 7);
+      const displayFine = typeof fineAmount === 'number' ? fineAmount : Number(fineAmount) || 0;
+      doc.text(`STATUTORY COMPOUNDING FINE TIER (${offenceType}): ₹ ${displayFine.toLocaleString('en-IN')}`, 24, y + 7);
       doc.setFont('times', 'normal');
       doc.setTextColor(0, 0, 0);
-      doc.text(`Legal Provision: ${noticeData.feeCalculation.legalProvision}`, 24, y + 13);
+      doc.text(`Legal Provision: ${legalProvision}`, 24, y + 13);
 
       // Electronic Evidence Seal
       y += 24;
@@ -210,6 +227,46 @@ export function StatutoryNoticeModal({
               className="w-full mt-1 px-2.5 py-1.5 bg-slate-800 border border-slate-600 text-white rounded-xs"
             />
           </div>
+          <div>
+            <label className="text-slate-400 text-[10px] uppercase flex items-center justify-between">
+              <span>Compounding Fine Amount (₹):</span>
+              <span className="text-amber-400 font-bold">Rule 32</span>
+            </label>
+            <div className="flex items-center gap-1 mt-1 bg-slate-800 border border-amber-600/60 px-2 py-0.5 rounded-xs">
+              <span className="text-amber-400 font-bold font-mono">₹</span>
+              <input
+                type="number"
+                min="0"
+                step="1000"
+                value={fineAmount}
+                onChange={(e) => setFineAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                className="w-full py-1 bg-transparent border-0 text-amber-200 font-bold font-mono text-xs focus:outline-none"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-slate-400 text-[10px] uppercase">Offence Classification Tier:</label>
+            <select
+              value={offenceType}
+              onChange={(e) => {
+                const val = e.target.value;
+                setOffenceType(val);
+                if (val === 'FIRST_OFFENCE') {
+                  setFineAmount(25000);
+                  setLegalProvision('Section 36(1) r/w Section 48 (Compounding of Offenses), Legal Metrology Act, 2009');
+                } else if (val === 'SUBSEQUENT_OFFENCE' || val === 'REPEAT_OFFENCE') {
+                  setFineAmount(50000);
+                  setLegalProvision('Section 36(2) Enhanced Compounding, Legal Metrology Act, 2009');
+                }
+              }}
+              className="w-full mt-1 px-2.5 py-1.5 bg-slate-800 border border-amber-600/60 text-amber-200 font-mono text-xs rounded-xs focus:outline-none"
+            >
+              <option value="FIRST_OFFENCE">FIRST_OFFENCE (Standard: ₹25,000)</option>
+              <option value="SUBSEQUENT_OFFENCE">SUBSEQUENT_OFFENCE (Enhanced: ₹50,000)</option>
+              <option value="REPEAT_OFFENCE">REPEAT_OFFENCE (Prosecution Referral)</option>
+              <option value="CUSTOM_OFFENCE">CUSTOM_OFFENCE (Officer Discretion)</option>
+            </select>
+          </div>
         </div>
 
         {/* Notice Preview Card */}
@@ -234,16 +291,154 @@ export function StatutoryNoticeModal({
             ))}
           </div>
 
-          <div className="p-2.5 bg-amber-950/40 border border-amber-700/60 flex items-center justify-between">
-            <div>
-              <div className="text-[10px] text-amber-400 uppercase font-bold">Prescribed Compounding Fine Tier (Rule 32)</div>
-              <div className="text-white font-bold text-sm">
-                ₹ {noticeData.feeCalculation.totalCompoundingFeeInr.toLocaleString('en-IN')}
+          {/* Compounding Fine Tier (Rule 32) — Directly Interactive & Editable */}
+          <div className="p-3 bg-amber-950/40 border border-amber-700/80 space-y-2 rounded-xs transition-all">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-800/60 pb-1.5">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-amber-400 uppercase font-bold tracking-wider flex items-center gap-1.5">
+                  <span>⚖️</span> Prescribed Compounding Fine Tier (Rule 32)
+                </span>
+                <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-600/50 px-1.5 py-0.2 rounded-xs font-sans">
+                  Editable
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                {/* Quick Presets */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFineAmount(25000);
+                    setOffenceType('FIRST_OFFENCE');
+                    setLegalProvision('Section 36(1) r/w Section 48 (Compounding of Offenses), Legal Metrology Act, 2009');
+                  }}
+                  className={`px-2 py-0.5 border cursor-pointer transition-colors text-[10px] ${
+                    Number(fineAmount) === 25000 && offenceType === 'FIRST_OFFENCE'
+                      ? 'bg-amber-600 text-white border-amber-400 font-bold'
+                      : 'bg-amber-950/80 text-amber-300 border-amber-700/60 hover:bg-amber-900/60'
+                  }`}
+                >
+                  ₹25k (1st)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFineAmount(50000);
+                    setOffenceType('SUBSEQUENT_OFFENCE');
+                    setLegalProvision('Section 36(2) Enhanced Compounding, Legal Metrology Act, 2009');
+                  }}
+                  className={`px-2 py-0.5 border cursor-pointer transition-colors text-[10px] ${
+                    Number(fineAmount) === 50000
+                      ? 'bg-amber-600 text-white border-amber-400 font-bold'
+                      : 'bg-amber-950/80 text-amber-300 border-amber-700/60 hover:bg-amber-900/60'
+                  }`}
+                >
+                  ₹50k (Repeat)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsEditingFine((prev) => !prev)}
+                  className="px-2.5 py-0.5 bg-amber-600/30 hover:bg-amber-600/50 text-amber-200 border border-amber-500/60 text-[10px] font-bold cursor-pointer transition-colors flex items-center gap-1 ml-1"
+                >
+                  <span>{isEditingFine ? '✓ Done' : '✏️ Edit'}</span>
+                </button>
               </div>
             </div>
-            <span className="text-[10px] bg-amber-900 text-amber-200 px-2 py-0.5 border border-amber-600 rounded-xs">
-              {noticeData.feeCalculation.offenceType}
-            </span>
+
+            {isEditingFine ? (
+              /* Expanded Edit Fields */
+              <div className="space-y-2 pt-1 font-mono">
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                  <div className="sm:col-span-6">
+                    <label className="text-[10px] text-amber-300 block uppercase font-bold mb-1">
+                      Compounding Fine Amount (INR):
+                    </label>
+                    <div className="flex items-center gap-1.5 bg-slate-900 border border-amber-500/80 px-2.5 py-1.5">
+                      <span className="text-amber-400 font-bold text-base">₹</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1000"
+                        value={fineAmount}
+                        onChange={(e) => setFineAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                        placeholder="25000"
+                        className="w-full bg-transparent text-white font-mono font-bold text-sm focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="sm:col-span-6">
+                    <label className="text-[10px] text-amber-300 block uppercase font-bold mb-1">
+                      Offence Tier:
+                    </label>
+                    <select
+                      value={offenceType}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setOffenceType(val);
+                        if (val === 'FIRST_OFFENCE') {
+                          setFineAmount(25000);
+                          setLegalProvision('Section 36(1) r/w Section 48 (Compounding of Offenses), Legal Metrology Act, 2009');
+                        } else if (val === 'SUBSEQUENT_OFFENCE' || val === 'REPEAT_OFFENCE') {
+                          setFineAmount(50000);
+                          setLegalProvision('Section 36(2) Enhanced Compounding, Legal Metrology Act, 2009');
+                        }
+                      }}
+                      className="w-full bg-slate-900 border border-amber-500/80 text-amber-200 px-2.5 py-2 font-mono text-xs focus:outline-none"
+                    >
+                      <option value="FIRST_OFFENCE">FIRST_OFFENCE (Rule 32)</option>
+                      <option value="SUBSEQUENT_OFFENCE">SUBSEQUENT_OFFENCE (Sec 36(2))</option>
+                      <option value="REPEAT_OFFENCE">REPEAT_OFFENCE (Prosecution)</option>
+                      <option value="CUSTOM_OFFENCE">CUSTOM_OFFENCE</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] text-amber-300 block uppercase font-bold mb-1">
+                    Statutory Legal Provision:
+                  </label>
+                  <input
+                    type="text"
+                    value={legalProvision}
+                    onChange={(e) => setLegalProvision(e.target.value)}
+                    placeholder="Section 36(1) r/w Section 48, Legal Metrology Act, 2009"
+                    className="w-full bg-slate-900 border border-amber-500/80 text-slate-200 px-2.5 py-1.5 font-mono text-xs focus:outline-none"
+                  />
+                </div>
+              </div>
+            ) : (
+              /* Display mode matching the screenshot, with interactive click-to-edit */
+              <div
+                onClick={() => setIsEditingFine(true)}
+                className="flex items-center justify-between cursor-pointer group hover:bg-amber-900/30 p-1.5 rounded-xs transition-colors"
+                title="Click to edit compounding fine amount or tier"
+              >
+                <div>
+                  <div className="text-white font-bold text-base font-mono flex items-center gap-1.5">
+                    <span>₹</span>
+                    <span>
+                      {typeof fineAmount === 'number'
+                        ? fineAmount.toLocaleString('en-IN')
+                        : Number(fineAmount || 0).toLocaleString('en-IN')}
+                    </span>
+                    <span className="text-[10px] text-amber-400 font-sans font-normal opacity-70 group-hover:opacity-100 transition-opacity">
+                      (Click to edit)
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 line-clamp-1 mt-0.5">
+                    {legalProvision}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] bg-amber-900 text-amber-200 px-2.5 py-1 border border-amber-600 rounded-xs font-mono font-bold tracking-wider">
+                    {offenceType}
+                  </span>
+                  <span className="text-amber-400 text-xs opacity-70 group-hover:opacity-100">✏️</span>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="text-[10px] text-slate-500 border-t border-slate-800 pt-2">
