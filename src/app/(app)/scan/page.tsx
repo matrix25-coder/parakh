@@ -41,6 +41,51 @@ export default function ScanProductPage() {
   const [establishmentName, setEstablishmentName] = useState('Retail Commercial Establishment');
   const [establishmentAddress, setEstablishmentAddress] = useState('');
   const [geoCoords, setGeoCoords] = useState<{ latitude: number; longitude: number; altitude?: number; accuracy?: number } | null>(null);
+  const [geoStatus, setGeoStatus] = useState<'acquiring' | 'locked' | 'denied' | 'unavailable'>('acquiring');
+
+  const requestGeolocation = () => {
+    if (typeof window === 'undefined') return;
+    if (!('geolocation' in navigator)) {
+      setGeoStatus('unavailable');
+      return;
+    }
+
+    setGeoStatus('acquiring');
+
+    // First attempt: High accuracy (satellite GPS)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setGeoCoords({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          altitude: pos.coords.altitude || undefined,
+          accuracy: pos.coords.accuracy || undefined,
+        });
+        setGeoStatus('locked');
+      },
+      (err) => {
+        console.warn('High-accuracy GPS failed or timed out, falling back to network positioning:', err.message);
+        // Second attempt: Standard/Network accuracy (works on laptops, PCs, indoors)
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            setGeoCoords({
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+              altitude: pos.coords.altitude || undefined,
+              accuracy: pos.coords.accuracy || undefined,
+            });
+            setGeoStatus('locked');
+          },
+          (fallbackErr) => {
+            console.warn('Network positioning unavailable or permission denied:', fallbackErr.message);
+            setGeoStatus(fallbackErr.code === 1 ? 'denied' : 'unavailable');
+          },
+          { timeout: 10000, enableHighAccuracy: false, maximumAge: 60000 }
+        );
+      },
+      { timeout: 5000, enableHighAccuracy: true, maximumAge: 30000 }
+    );
+  };
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -50,20 +95,7 @@ export default function ScanProductPage() {
         })
         .catch(() => {});
 
-      if ('geolocation' in navigator) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            setGeoCoords({
-              latitude: pos.coords.latitude,
-              longitude: pos.coords.longitude,
-              altitude: pos.coords.altitude || undefined,
-              accuracy: pos.coords.accuracy || undefined,
-            });
-          },
-          () => {},
-          { timeout: 6000, enableHighAccuracy: true }
-        );
-      }
+      requestGeolocation();
     }
   }, []);
 
@@ -435,6 +467,49 @@ export default function ScanProductPage() {
           <span>{scanProgressStage || 'Processing package inspection...'}</span>
         </div>
       )}
+
+      {/* ── REAL-TIME GEOLOCATION TELEMETRY STATUS BAR ── */}
+      <div className="p-3 bg-white border border-[#CBD5E1] flex flex-wrap items-center justify-between gap-3 text-xs font-mono shadow-xs">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`w-2.5 h-2.5 rounded-full ${
+            geoStatus === 'locked'
+              ? 'bg-[#15803D] animate-pulse'
+              : geoStatus === 'acquiring'
+              ? 'bg-[#EAB308]'
+              : 'bg-[#DC2626]'
+          }`} />
+          <span className="font-bold text-[#0A2540] uppercase">
+            Statutory Geo-Tag Shutter Telemetry:
+          </span>
+          {geoStatus === 'locked' && geoCoords ? (
+            <span className="font-bold text-[#15803D]">
+              {geoCoords.latitude.toFixed(4)}°N, {geoCoords.longitude.toFixed(4)}°E
+              {geoCoords.accuracy ? ` (±${geoCoords.accuracy.toFixed(1)}m GPS Accuracy)` : ''}
+            </span>
+          ) : geoStatus === 'acquiring' ? (
+            <span className="text-[#B45309]">
+              Acquiring device GPS satellites & network location...
+            </span>
+          ) : geoStatus === 'denied' ? (
+            <span className="text-[#B91C1C]">
+              Permission Denied — Browser location access was dismissed. Click retry to grant.
+            </span>
+          ) : (
+            <span className="text-[#64748B]">
+              Location unavailable on this terminal / hardware.
+            </span>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={requestGeolocation}
+          className="px-3 py-1 bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#CBD5E1] text-[#0A2540] font-bold text-[11px] cursor-pointer flex items-center gap-1 transition-colors"
+        >
+          <span>📍</span>
+          <span>{geoStatus === 'locked' ? 'Refresh GPS' : 'Acquire Device Location'}</span>
+        </button>
+      </div>
 
       {/* Main Multi-Mode Workspace */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
