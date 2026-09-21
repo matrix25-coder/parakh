@@ -43,12 +43,16 @@ export default function ScanProductPage() {
   const [geoCoords, setGeoCoords] = useState<{ latitude: number; longitude: number; altitude?: number; accuracy?: number } | null>(null);
   const [geoStatus, setGeoStatus] = useState<'idle' | 'acquiring' | 'locked' | 'denied' | 'unavailable'>('idle');
   const [showLocationPrompt, setShowLocationPrompt] = useState(false);
+  const executeExtractionRef = useRef<(coords: { latitude: number; longitude: number; altitude?: number; accuracy?: number } | null) => Promise<void>>(async () => {});
 
-  const requestGeolocation = () => {
+  const requestGeolocation = (andProceedToScan = false) => {
     if (typeof window === 'undefined') return;
     if (!('geolocation' in navigator)) {
       setGeoStatus('unavailable');
       setGeoCoords(null);
+      if (andProceedToScan) {
+        executeExtractionRef.current(null);
+      }
       return;
     }
 
@@ -58,14 +62,18 @@ export default function ScanProductPage() {
     // enableHighAccuracy: true, timeout: 10000, maximumAge: 0
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setGeoCoords({
+        const coords = {
           latitude: pos.coords.latitude,
           longitude: pos.coords.longitude,
           altitude: pos.coords.altitude || undefined,
           accuracy: pos.coords.accuracy || undefined,
-        });
+        };
+        setGeoCoords(coords);
         setGeoStatus('locked');
         setShowLocationPrompt(false);
+        if (andProceedToScan) {
+          executeExtractionRef.current(coords);
+        }
       },
       (err) => {
         console.warn(`Geolocation Attempt 1 (high accuracy) failed (code ${err.code}): ${err.message}`);
@@ -74,6 +82,9 @@ export default function ScanProductPage() {
         if (err.code === 1) {
           setGeoStatus('denied');
           setGeoCoords(null);
+          if (andProceedToScan) {
+            executeExtractionRef.current(null);
+          }
           return;
         }
 
@@ -81,14 +92,18 @@ export default function ScanProductPage() {
         // Retry with Attempt 2: enableHighAccuracy: false, timeout: 15000, maximumAge: 0
         navigator.geolocation.getCurrentPosition(
           (fallbackPos) => {
-            setGeoCoords({
+            const coords = {
               latitude: fallbackPos.coords.latitude,
               longitude: fallbackPos.coords.longitude,
               altitude: fallbackPos.coords.altitude || undefined,
               accuracy: fallbackPos.coords.accuracy || undefined,
-            });
+            };
+            setGeoCoords(coords);
             setGeoStatus('locked');
             setShowLocationPrompt(false);
+            if (andProceedToScan) {
+              executeExtractionRef.current(coords);
+            }
           },
           (fallbackErr) => {
             console.warn(`Geolocation Attempt 2 (standard accuracy) failed (code ${fallbackErr.code}): ${fallbackErr.message}`);
@@ -98,6 +113,9 @@ export default function ScanProductPage() {
               setGeoStatus('unavailable');
             }
             setGeoCoords(null);
+            if (andProceedToScan) {
+              executeExtractionRef.current(null);
+            }
           },
           {
             enableHighAccuracy: false,
@@ -370,16 +388,10 @@ export default function ScanProductPage() {
     }
   };
 
-  const handleStartExtraction = async (forceProceedWithoutLocation = false) => {
+  const executeExtraction = async (
+    coordsToUse: { latitude: number; longitude: number; altitude?: number; accuracy?: number } | null
+  ) => {
     if (images.length === 0) return;
-
-    // Requirement 4: If location is not yet acquired when the user tries to start an inspection,
-    // prompt them with the Acquire button before proceeding.
-    if (!geoCoords && !forceProceedWithoutLocation) {
-      setShowLocationPrompt(true);
-      return;
-    }
-
     setIsExtracting(true);
     setScanError(null);
     setShowLocationPrompt(false);
@@ -402,15 +414,14 @@ export default function ScanProductPage() {
           category,
           isImported,
           countryOfOrigin,
-          latitude: geoCoords ? geoCoords.latitude : null,
-          longitude: geoCoords ? geoCoords.longitude : null,
-          altitude: geoCoords?.altitude ?? null,
-          accuracy: geoCoords?.accuracy ?? null,
+          latitude: coordsToUse ? coordsToUse.latitude : null,
+          longitude: coordsToUse ? coordsToUse.longitude : null,
+          altitude: coordsToUse?.altitude ?? null,
+          accuracy: coordsToUse?.accuracy ?? null,
           establishmentName,
           establishmentAddress,
         }),
       });
-
 
       const resText = await res.text();
       let data: any = {};
@@ -458,10 +469,10 @@ export default function ScanProductPage() {
             violations_count: data.violationsCount,
             inspector_name: 'Field Inspection Officer',
             created_at: new Date().toISOString(),
-            latitude: geoCoords ? geoCoords.latitude : null,
-            longitude: geoCoords ? geoCoords.longitude : null,
-            altitude: geoCoords?.altitude ?? null,
-            accuracy: geoCoords?.accuracy ?? null,
+            latitude: coordsToUse ? coordsToUse.latitude : null,
+            longitude: coordsToUse ? coordsToUse.longitude : null,
+            altitude: coordsToUse?.altitude ?? null,
+            accuracy: coordsToUse?.accuracy ?? null,
             establishment_name: establishmentName || null,
             establishment_address: establishmentAddress || null,
           };
@@ -479,6 +490,27 @@ export default function ScanProductPage() {
       setScanError(err.message || 'An error occurred during packaging inspection.');
       setIsExtracting(false);
     }
+  };
+
+  executeExtractionRef.current = executeExtraction;
+
+  const handleStartExtraction = async (forceProceedWithoutLocation = false) => {
+    if (images.length === 0) return;
+
+    // If location is already captured, proceed directly!
+    if (geoCoords) {
+      executeExtraction(geoCoords);
+      return;
+    }
+
+    // If user already bypassed or location is already known to be denied/unavailable, do not block!
+    if (forceProceedWithoutLocation || geoStatus === 'denied' || geoStatus === 'unavailable') {
+      executeExtraction(null);
+      return;
+    }
+
+    // Otherwise prompt user to acquire location
+    setShowLocationPrompt(true);
   };
 
   return (
@@ -572,20 +604,31 @@ export default function ScanProductPage() {
             {!geoCoords && (
               <button
                 type="button"
-                onClick={requestGeolocation}
+                onClick={() => requestGeolocation(false)}
                 disabled={geoStatus === 'acquiring'}
-                className="px-3 py-1.5 bg-[#0A2540] hover:bg-[#1E3A8A] text-white font-bold text-xs cursor-pointer flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-2xs"
+                className="px-3.5 py-1.5 bg-[#0A2540] hover:bg-[#1E3A8A] text-white font-bold text-xs cursor-pointer flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-2xs"
               >
-                <span>📍 Allow Location Access</span>
+                {geoStatus === 'acquiring' ? (
+                  <>
+                    <span className="w-3 h-3 border-2 border-white border-t-transparent animate-spin"></span>
+                    <span>Acquiring...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>📍</span>
+                    <span>Allow Location Access</span>
+                  </>
+                )}
               </button>
             )}
             <button
               type="button"
-              onClick={requestGeolocation}
+              onClick={() => requestGeolocation(false)}
               disabled={geoStatus === 'acquiring'}
               className="px-3 py-1.5 bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#CBD5E1] text-[#0A2540] font-bold text-xs cursor-pointer flex items-center gap-1.5 transition-colors disabled:opacity-50"
             >
-              <span>📍 Acquire Device Location</span>
+              <span>📍</span>
+              <span>{geoCoords ? 'Refresh Location' : 'Acquire Device Location'}</span>
             </button>
           </div>
         </div>
@@ -1132,19 +1175,28 @@ export default function ScanProductPage() {
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-2 border-t border-[#CBD5E1]">
               <button
                 type="button"
-                onClick={() => handleStartExtraction(true)}
+                onClick={() => executeExtraction(null)}
                 className="px-3 py-2 border border-[#CBD5E1] text-[#64748B] hover:text-[#0A2540] hover:bg-[#F1F5F9] text-xs font-semibold cursor-pointer transition-colors"
               >
                 Proceed without location
               </button>
               <button
                 type="button"
-                onClick={requestGeolocation}
+                onClick={() => requestGeolocation(true)}
                 disabled={geoStatus === 'acquiring'}
                 className="px-4 py-2 bg-[#0A2540] hover:bg-[#1E3A8A] text-white text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 transition-colors"
               >
-                <span>📍</span>
-                <span>{geoStatus === 'acquiring' ? 'Acquiring...' : 'Acquire Device Location'}</span>
+                {geoStatus === 'acquiring' ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent animate-spin"></span>
+                    <span>Acquiring & Starting...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>📍</span>
+                    <span>Acquire Location & Start Inspection</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
