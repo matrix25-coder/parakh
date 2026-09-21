@@ -1,52 +1,79 @@
-# dependencies
+# ─── Node.js ─────────────────────────────────────────────────────────────────
 node_modules/
 /.pnp
 .pnp.js
 .yarn/install-state.gz
 
-# testing
+# ─── Testing / Coverage ──────────────────────────────────────────────────────
 /coverage
 
-# next.js
+# ─── Next.js build outputs ───────────────────────────────────────────────────
 .next/
 out/
 
-# production
+# ─── Production build ────────────────────────────────────────────────────────
 build/
+dist/
 
-# misc
-.DS_Store
+# ─── Environment & secrets ───────────────────────────────────────────────────
+# Ignore ALL .env variants EXCEPT the safe placeholder example file
+.env
+.env.local
+.env.*.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+.env.staging
+
+# ─── Private keys & certificates ─────────────────────────────────────────────
 *.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+service-account*.json
+google-services.json
 
-# debug
+# ─── Debug & logs ────────────────────────────────────────────────────────────
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+*.log
 
-# local env files
-.env*.local
+# ─── OS artefacts ────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
 
-# vercel & tools
+# ─── Vercel / tooling ────────────────────────────────────────────────────────
 .vercel/
 .reticle/
 
-# typescript
+# ─── TypeScript build info ───────────────────────────────────────────────────
 *.tsbuildinfo
 next-env.d.ts
 
-# local database & uploads
+# ─── Local SQLite database (contains real inspection records & PII) ──────────
 data/*.db
 data/*.db-shm
 data/*.db-wal
 data/*.sqlite
+data/*.sqlite3
+
+# ─── Uploaded inspection images (may contain personal/PII data) ──────────────
 public/uploads/*
 !public/uploads/.gitkeep
+# Allow committed sample/demo images only
 !public/uploads/wellcore_*.jpg
 !public/uploads/sample_*.jpg
-!data/.gitkeep
+
+# ─── OCR model data (large binary, not source code) ──────────────────────────
 *.traineddata
 
-# android build
+# ─── Android build artefacts ─────────────────────────────────────────────────
 android/.gradle/
 android/app/build/
 android/build/
@@ -57,3 +84,14 @@ android/local.properties
 android/captures/
 android/.externalNativeBuild/
 android/.cxx/
+# Firebase / Google Services config (contains API keys)
+android/app/google-services.json
+
+# ─── Capacitor / Cordova generated ───────────────────────────────────────────
+.capacitor/
+
+# ─── Temporary / scratch files ───────────────────────────────────────────────
+*.tmp
+*.bak
+*.swp
+.cache/
