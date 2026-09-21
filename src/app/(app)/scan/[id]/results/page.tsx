@@ -263,6 +263,7 @@ export default function ComplianceResultsPage() {
           onSelectField={handleSelectField}
           productName={report.product_name}
           category={report.category}
+          caliperX={report.caliper_x ?? scanData?.caliper_x ?? null}
         />
       )}
 

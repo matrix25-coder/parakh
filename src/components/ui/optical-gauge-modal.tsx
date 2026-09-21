@@ -9,13 +9,28 @@ import {
   CalibrationResult,
 } from '@/lib/vision/optical-gauge';
 
+export interface CaliperDetails {
+  caliperX: number;
+  caliperY: number;
+  caliperHeightPx: number;
+  measuredMm: number;
+  pixelsPerMm: number;
+}
+
 export interface OpticalGaugeModalProps {
   isOpen: boolean;
   onClose: () => void;
   imageUrl: string;
   fieldToMeasure?: string;
   requiredHeightMm?: number;
-  onSaveMeasurement: (field: string, measuredMm: number, pixelsPerMm: number) => void;
+  initialCaliperX?: number;
+  initialCaliperY?: number;
+  onSaveMeasurement: (
+    field: string,
+    measuredMm: number,
+    pixelsPerMm: number,
+    caliperDetails?: CaliperDetails
+  ) => void;
 }
 
 export function OpticalGaugeModal({
@@ -24,6 +39,8 @@ export function OpticalGaugeModal({
   imageUrl,
   fieldToMeasure = 'net_quantity',
   requiredHeightMm = 2.0,
+  initialCaliperX,
+  initialCaliperY,
   onSaveMeasurement,
 }: OpticalGaugeModalProps) {
   const [targetType, setTargetType] = useState<ReferenceTargetType>('RS5_COIN');
@@ -35,7 +52,8 @@ export function OpticalGaugeModal({
   const [refSize, setRefSize] = useState<number>(100); // diameter for coin, width for card
 
   // Measurement caliper position
-  const [caliperY, setCaliperY] = useState<number>(200);
+  const [caliperX, setCaliperX] = useState<number>(initialCaliperX || 300);
+  const [caliperY, setCaliperY] = useState<number>(initialCaliperY || 200);
   const [caliperHeightPx, setCaliperHeightPx] = useState<number>(24);
 
   const [calibration, setCalibration] = useState<CalibrationResult | null>(null);
@@ -117,7 +135,7 @@ export function OpticalGaugeModal({
 
       // 2. Draw Measurement Caliper Bar
       ctx.save();
-      const calX = canvas.width / 2;
+      const calX = caliperX;
       const calW = 160;
       ctx.strokeStyle = '#10B981'; // Emerald
       ctx.lineWidth = 2;
@@ -142,11 +160,11 @@ export function OpticalGaugeModal({
       const measuredMm = calibration?.pixelsPerMm ? Math.round((caliperHeightPx / calibration.pixelsPerMm) * 100) / 100 : 0;
       ctx.fillStyle = '#10B981';
       ctx.font = 'bold 12px monospace';
-      ctx.fillText(`CALIPER: ${measuredMm.toFixed(2)} mm (${caliperHeightPx}px)`, calX - 70, caliperY - 8);
+      ctx.fillText(`CALIPER: ${measuredMm.toFixed(2)} mm (X:${calX}px, Y:${caliperY}px)`, Math.max(10, calX - 70), caliperY - 8);
       ctx.restore();
     };
     img.src = imageUrl;
-  }, [isOpen, imageUrl, targetType, refX, refY, refSize, caliperY, caliperHeightPx, calibration]);
+  }, [isOpen, imageUrl, targetType, refX, refY, refSize, caliperX, caliperY, caliperHeightPx, calibration]);
 
   if (!isOpen) return null;
 
@@ -268,16 +286,31 @@ export function OpticalGaugeModal({
               onChange={(e) => setCaliperHeightPx(parseInt(e.target.value))}
               className="w-full accent-emerald-500"
             />
-            <div className="flex justify-between text-[10px] text-slate-400">
-              <span>Caliper Y Position:</span>
-              <input
-                type="range"
-                min={20}
-                max={400}
-                value={caliperY}
-                onChange={(e) => setCaliperY(parseInt(e.target.value))}
-                className="w-32 accent-slate-400"
-              />
+            <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-400 pt-1">
+              <div className="flex items-center justify-between gap-1">
+                <span>Caliper X:</span>
+                <input
+                  type="range"
+                  min={20}
+                  max={600}
+                  value={caliperX}
+                  onChange={(e) => setCaliperX(parseInt(e.target.value))}
+                  className="w-20 sm:w-24 accent-emerald-400"
+                />
+                <span className="text-white font-mono text-[9px] w-8 text-right">{caliperX}px</span>
+              </div>
+              <div className="flex items-center justify-between gap-1">
+                <span>Caliper Y:</span>
+                <input
+                  type="range"
+                  min={20}
+                  max={450}
+                  value={caliperY}
+                  onChange={(e) => setCaliperY(parseInt(e.target.value))}
+                  className="w-20 sm:w-24 accent-slate-400"
+                />
+                <span className="text-white font-mono text-[9px] w-8 text-right">{caliperY}px</span>
+              </div>
             </div>
           </div>
         </div>
@@ -311,7 +344,13 @@ export function OpticalGaugeModal({
             </button>
             <button
               onClick={() => {
-                onSaveMeasurement(fieldToMeasure, measuredMm, pixelsPerMm);
+                onSaveMeasurement(fieldToMeasure, measuredMm, pixelsPerMm, {
+                  caliperX,
+                  caliperY,
+                  caliperHeightPx,
+                  measuredMm,
+                  pixelsPerMm,
+                });
                 onClose();
               }}
               className="px-4 py-1.5 bg-[#EA580C] hover:bg-orange-600 text-white font-mono font-bold text-xs"

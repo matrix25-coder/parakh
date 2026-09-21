@@ -72,9 +72,11 @@ export function ForensicBadge({
             </span>
           </div>
           <div>
-            <span className="text-slate-400">GPS Shutter:</span>{' '}
+            <span className="text-slate-400">Capture Location:</span>{' '}
             <span className="text-slate-200">
-              {coordinates ? `${coordinates.latitude.toFixed(4)}°N, ${coordinates.longitude.toFixed(4)}°E` : '28.6139°N, 77.2090°E (Del)'}
+              {coordinates && typeof coordinates.latitude === 'number' && typeof coordinates.longitude === 'number'
+                ? `${coordinates.latitude.toFixed(4)}°N, ${coordinates.longitude.toFixed(4)}°E`
+                : 'Location unavailable'}
             </span>
           </div>
           <div>
@@ -117,9 +119,13 @@ export function ForensicBadge({
                 <div className="bg-slate-900/80 p-2.5 border border-slate-700">
                   <div className="text-slate-400 text-[10px] uppercase">Telemetry Coordinates</div>
                   <div className="text-white font-bold mt-0.5">
-                    {coordinates ? `${coordinates.latitude.toFixed(6)}°N, ${coordinates.longitude.toFixed(6)}°E` : '28.613939°N, 77.209021°E'}
+                    {coordinates && typeof coordinates.latitude === 'number' && typeof coordinates.longitude === 'number'
+                      ? `${coordinates.latitude.toFixed(6)}°N, ${coordinates.longitude.toFixed(6)}°E`
+                      : 'Location unavailable'}
                   </div>
-                  <div className="text-emerald-400 text-[10px]">±3.2m GPS Accuracy</div>
+                  <div className={coordinates ? "text-emerald-400 text-[10px]" : "text-slate-400 text-[10px]"}>
+                    {coordinates?.accuracyMeters ? `±${coordinates.accuracyMeters.toFixed(1)}m GPS Accuracy` : coordinates ? 'Coordinates Recorded' : 'Telemetry not captured'}
+                  </div>
                 </div>
                 <div className="bg-slate-900/80 p-2.5 border border-slate-700">
                   <div className="text-slate-400 text-[10px] uppercase">Enforcement Officer</div>
@@ -130,7 +136,7 @@ export function ForensicBadge({
 
               <div className="bg-emerald-950/40 border border-emerald-700/60 p-3 text-emerald-200 text-[11px]">
                 <p className="font-semibold text-emerald-300 mb-1">Electronic Integrity Affidavit Statement:</p>
-                "I hereby certify that the digital representation was captured by the optical sensor of this terminal at the stated GPS coordinates and time. The cryptographic digest was generated prior to any compression, alteration or transmission."
+                {`"I hereby certify that the digital representation was captured by the optical sensor of this terminal at the ${coordinates ? 'recorded capture location' : 'terminal'} and time. The cryptographic digest was generated prior to any compression, alteration or transmission."`}
               </div>
             </div>
 

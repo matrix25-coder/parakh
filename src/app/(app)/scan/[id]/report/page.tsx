@@ -54,7 +54,12 @@ export default function ComplianceReportPage() {
     }
   };
 
-  const handleSaveMeasurement = (field: string, measuredMm: number) => {
+  const handleSaveMeasurement = (
+    field: string,
+    measuredMm: number,
+    pixelsPerMm: number,
+    caliperDetails?: any
+  ) => {
     setFontAudits((prev) =>
       prev.map((audit) => {
         if (audit.field === field) {
@@ -63,6 +68,8 @@ export default function ComplianceReportPage() {
             ...audit,
             detected_height_mm: measuredMm,
             status: pass ? 'PASS' : 'FAIL',
+            caliper_x: caliperDetails?.caliperX ?? audit.caliper_x,
+            caliper_y: caliperDetails?.caliperY ?? audit.caliper_y,
           };
         }
         return audit;

@@ -142,7 +142,7 @@ export function compileFormVNotice(
   const dateObj = new Date();
   const year = dateObj.getFullYear();
   const noticeSeq = Math.floor(1000 + Math.random() * 9000);
-  const noticeNumber = `LMO/DEL/ENF/${year}/${noticeSeq}`;
+  const noticeNumber = `LMO/ENF/${year}/${noticeSeq}`;
 
   const mappedViolations = report.violations.map((v) => ({
     ruleCode: v.rule_code,
@@ -154,12 +154,12 @@ export function compileFormVNotice(
 
   const feeCalculation = calculateCompoundingFees(report.violations.length, isRepeatOffender);
 
-  const coords = manifest?.telemetry.coordinates;
-  const coordString = coords
-    ? `${coords.latitude.toFixed(6)}° N, ${coords.longitude.toFixed(6)}° E (±${coords.accuracyMeters || 5}m)`
-    : establishment.coordinates
+  const coords = manifest?.telemetry?.coordinates;
+  const coordString = coords && typeof coords.latitude === 'number' && typeof coords.longitude === 'number'
+    ? `${coords.latitude.toFixed(6)}° N, ${coords.longitude.toFixed(6)}° E${coords.accuracyMeters ? ` (±${coords.accuracyMeters}m)` : ''}`
+    : establishment.coordinates && typeof establishment.coordinates.latitude === 'number' && typeof establishment.coordinates.longitude === 'number'
     ? `${establishment.coordinates.latitude.toFixed(6)}° N, ${establishment.coordinates.longitude.toFixed(6)}° E`
-    : 'GPS Telemetry Embedded in Dossier';
+    : 'Location not captured';
 
   const timeString = manifest?.telemetry.istTimestamp || dateObj.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST';
 

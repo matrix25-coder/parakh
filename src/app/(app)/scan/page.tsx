@@ -38,8 +38,8 @@ export default function ScanProductPage() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanProgressStage, setScanProgressStage] = useState<string>('');
   const [isNative, setIsNative] = useState(false);
-  const [establishmentName, setEstablishmentName] = useState('Central Retail Store');
-  const [establishmentAddress, setEstablishmentAddress] = useState('Connaught Place, New Delhi');
+  const [establishmentName, setEstablishmentName] = useState('Retail Commercial Establishment');
+  const [establishmentAddress, setEstablishmentAddress] = useState('');
   const [geoCoords, setGeoCoords] = useState<{ latitude: number; longitude: number; altitude?: number; accuracy?: number } | null>(null);
 
   useEffect(() => {

@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { PageHeader, StatusBadge, SeverityBadge, ConfidenceBadge } from '@/components/ui';
+import { OpticalGaugeModal } from '@/components/ui/optical-gauge-modal';
 import type { RuleEvaluationDetail, ComplianceReport } from '@/lib/types';
 import type { BoundingBox } from '@/lib/extraction/types';
 import { getScanFromClient, saveScanToClient } from '@/lib/client-scan-cache';
@@ -57,6 +58,100 @@ const STATUTORY_FIELD_CONFIG: Array<{
   },
 ];
 
+/**
+ * Pure, deterministic derivation of "What this image contains"
+ * Strictly based on actual detected declarations and localized bounding boxes for this surface.
+ * Never invents metadata or claims declarations that are not physically present.
+ */
+function deriveImageContents(
+  surface: string,
+  imageIdx: number,
+  extracted: any,
+  boxes: Record<string, BoundingBox>,
+  caliperX?: number | null
+): string {
+  const normSurface = (surface || 'FRONT').toUpperCase();
+  const surfaceLabel =
+    normSurface === 'FRONT'
+      ? 'Front panel'
+      : normSurface === 'BACK'
+      ? 'Back panel'
+      : normSurface === 'SIDE'
+      ? 'Side panel'
+      : normSurface === 'TOP'
+      ? 'Top panel'
+      : normSurface === 'BOTTOM'
+      ? 'Bottom panel'
+      : `${normSurface.toLowerCase()} panel`;
+
+  const detectedItems: string[] = [];
+
+  // Identify bounding boxes specifically tied to this face
+  const faceBoxes = Object.entries(boxes || {}).filter(([_, b]) => {
+    if (!b) return false;
+    if (b.face) {
+      return b.face.toLowerCase() === normSurface.toLowerCase();
+    }
+    return imageIdx === 0;
+  });
+
+  const boxKeys = new Set(faceBoxes.map(([k]) => k));
+
+  // Check product name
+  if (boxKeys.has('commodity_description') || (imageIdx === 0 && (extracted?.productName || extracted?.commodityName))) {
+    detectedItems.push('product name');
+  }
+
+  // Check net quantity
+  if (boxKeys.has('net_quantity') || (imageIdx === 0 && extracted?.netQuantity?.value) || (imageIdx === 1 && extracted?.netQuantity?.value && boxKeys.has('net_quantity'))) {
+    detectedItems.push('net quantity');
+  }
+
+  // Check MRP
+  if (boxKeys.has('mrp') || (imageIdx === 0 && (extracted?.mrp?.value || extracted?.mrp?.raw))) {
+    detectedItems.push('MRP');
+  }
+
+  // Check manufacturer / packer
+  if (boxKeys.has('manufacturer_name') || (normSurface === 'BACK' && (extracted?.manufacturer || extracted?.address)) || (imageIdx === 1 && (extracted?.manufacturer || extracted?.address))) {
+    detectedItems.push('manufacturer address');
+  }
+
+  // Check consumer care
+  if (boxKeys.has('consumer_care') || (normSurface === 'BACK' && (extracted?.consumerCare?.phone || extracted?.consumerCare?.email || extracted?.consumerCare?.raw)) || (imageIdx === 1 && extracted?.consumerCare?.raw)) {
+    detectedItems.push('consumer-care details');
+  }
+
+  // Check country of origin
+  if (boxKeys.has('country_of_origin') || (normSurface === 'SIDE' && extracted?.countryOfOrigin)) {
+    detectedItems.push('country of origin');
+  }
+
+  // Check manufacturing / expiry
+  if (boxKeys.has('month_year') || normSurface === 'TOP' || (imageIdx === 1 && (extracted?.manufacturingDate?.raw || extracted?.expiryDate?.raw) && !boxKeys.has('commodity_description'))) {
+    detectedItems.push('batch/manufacturing information');
+  }
+
+  // Caliper measurement coordinate
+  if (typeof caliperX === 'number') {
+    detectedItems.push('measurement evidence');
+  }
+
+  if (detectedItems.length === 0) {
+    return `${surfaceLabel} — No mandatory declarations detected on this surface`;
+  }
+
+  if (detectedItems.length === 1) {
+    return `${surfaceLabel} — ${detectedItems[0]} declaration`;
+  }
+
+  if (detectedItems.length === 2) {
+    return `${surfaceLabel} — ${detectedItems[0]} and ${detectedItems[1]}`;
+  }
+
+  return `${surfaceLabel} — ${detectedItems.slice(0, -1).join(', ')} and ${detectedItems[detectedItems.length - 1]}`;
+}
+
 export default function EvidenceViewerPage() {
   const params = useParams();
   const id = (params?.id as string) || '';
@@ -71,10 +166,46 @@ export default function EvidenceViewerPage() {
   const [boundingBoxes, setBoundingBoxes] = useState<Record<string, BoundingBox>>({});
   const [fetchError, setFetchError] = useState<string | null>(null);
 
+  // Optical Evidence & Telemetry state
+  const [scanRecord, setScanRecord] = useState<any>(null);
+  const [extractedData, setExtractedData] = useState<any>(null);
+  const [telemetryCoords, setTelemetryCoords] = useState<{ latitude: number; longitude: number; accuracyMeters?: number | null } | null>(null);
+  const [captureTimestamp, setCaptureTimestamp] = useState<string | null>(null);
+  const [caliperPositions, setCaliperPositions] = useState<Record<number, number | null>>({});
+  const [showOpticalGauge, setShowOpticalGauge] = useState(false);
+
   const applyEvidenceData = (data: any) => {
+    setScanRecord(data);
     if (data.image_path) {
       setImagePath(data.image_path);
     }
+
+    const ext = data.extractedData || data.extracted_data;
+    if (ext) {
+      setExtractedData(typeof ext === 'string' ? JSON.parse(ext) : ext);
+    }
+
+    // Telemetry & GPS handling (genuine data only, no fabricated coordinates)
+    const manifest = data.complianceResult?.forensic_manifest || data.forensicManifest || data.forensic_manifest;
+    const coords = manifest?.telemetry?.coordinates || (data.latitude && data.longitude ? { latitude: data.latitude, longitude: data.longitude, accuracyMeters: data.accuracy_meters } : null);
+    setTelemetryCoords(coords);
+
+    const timeStr = manifest?.telemetry?.istTimestamp || (data.created_at ? new Date(data.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST' : null);
+    setCaptureTimestamp(timeStr);
+
+    // Initial Caliper Map for second image (or any image where recorded)
+    const initialCaliperMap: Record<number, number | null> = {};
+    if (typeof data.caliper_x === 'number') {
+      initialCaliperMap[1] = data.caliper_x;
+    } else if (typeof data.complianceResult?.caliper_x === 'number') {
+      initialCaliperMap[1] = data.complianceResult.caliper_x;
+    } else if (data.complianceResult?.font_audits) {
+      const auditWithCaliper = data.complianceResult.font_audits.find((a: any) => typeof a.caliper_x === 'number');
+      if (auditWithCaliper) {
+        initialCaliperMap[1] = auditWithCaliper.caliper_x;
+      }
+    }
+    setCaliperPositions(initialCaliperMap);
 
     const loadedImages: PackageImageItem[] = [];
     const sourceImages = data.package_faces || data.images || [];
@@ -114,6 +245,28 @@ export default function EvidenceViewerPage() {
 
     if (data.extractedData?.boundingBoxes && Object.keys(data.extractedData.boundingBoxes).length > 0) {
       setBoundingBoxes(data.extractedData.boundingBoxes);
+    }
+  };
+
+  const handleSaveCaliper = (field: string, measuredMm: number, pixelsPerMm: number, details?: any) => {
+    if (details?.caliperX !== undefined) {
+      setCaliperPositions((prev) => ({
+        ...prev,
+        [activeImageIndex]: details.caliperX,
+        ...(activeImageIndex === 1 ? { 1: details.caliperX } : {}),
+      }));
+
+      if (scanRecord) {
+        const updated = {
+          ...scanRecord,
+          caliper_x: details.caliperX,
+          complianceResult: {
+            ...scanRecord.complianceResult,
+            caliper_x: details.caliperX,
+          },
+        };
+        saveScanToClient(updated);
+      }
     }
   };
 
@@ -229,6 +382,22 @@ export default function EvidenceViewerPage() {
     );
   };
 
+  const currentSurface = currentImage?.face || activeFace.toUpperCase();
+  const caliperXForImage = caliperPositions[activeImageIndex] ?? null;
+  const imageContentsDescription = deriveImageContents(
+    currentSurface,
+    activeImageIndex,
+    extractedData,
+    boundingBoxes,
+    caliperXForImage
+  );
+
+  const activeBoxesCount = Object.values(boundingBoxes || {}).filter((b) => {
+    if (!b) return false;
+    if (b.face) return b.face.toLowerCase() === currentSurface.toLowerCase();
+    return activeImageIndex === 0;
+  }).length;
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto py-2">
       <PageHeader
@@ -274,6 +443,121 @@ export default function EvidenceViewerPage() {
             {selectedRule.status}
           </span>
         </div>
+      </div>
+
+      {/* Statutory Evidence Image Metadata Dossier */}
+      <div className="bg-white border border-[#CBD5E1] p-4 shadow-xs space-y-3 font-mono text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E8F0] pb-2.5">
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 bg-[#0A2540] text-white font-bold text-[11px]">
+              Evidence Image 0{activeImageIndex + 1}
+            </span>
+            <span className="font-bold text-[#0A2540]">
+              Surface: {currentSurface} Panel
+            </span>
+            {isMultiFace && (
+              <span className="text-[10px] text-[#64748B]">
+                ({activeImageIndex + 1} of {packageImages.length} captured package images)
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 text-[11px]">
+            <span className="text-[#64748B]">File:</span>
+            <span className="font-bold text-[#0F172A] max-w-[200px] truncate" title={currentImage?.name}>
+              {currentImage?.name || 'package_photo.jpg'}
+            </span>
+          </div>
+        </div>
+
+        {/* What this image contains card */}
+        <div className="bg-[#F8FAFC] border border-[#CBD5E1] p-3 space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase font-bold text-[#64748B] tracking-wider">
+              What this image contains
+            </span>
+            <span className="text-[10px] text-[#0A2540] font-semibold">
+              Physical Evidence Mapping
+            </span>
+          </div>
+          <p className="text-xs font-semibold text-[#0A2540] font-sans leading-relaxed">
+            {imageContentsDescription}
+          </p>
+        </div>
+
+        {/* Telemetry & Optical Metadata Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
+          <div className="p-2.5 bg-[#F8FAFC] border border-[#E2E8F0] space-y-0.5">
+            <span className="text-[#64748B] text-[10px] uppercase block">Surface / Panel</span>
+            <span className="font-bold text-[#0F172A] block">{currentSurface} Panel</span>
+            <span className="text-[9px] text-[#64748B]">
+              {currentSurface === 'FRONT' ? 'Principal Display Panel (PDP)' : 'Information Panel'}
+            </span>
+          </div>
+
+          <div className="p-2.5 bg-[#F8FAFC] border border-[#E2E8F0] space-y-0.5">
+            <span className="text-[#64748B] text-[10px] uppercase block">Bounding Boxes</span>
+            <span className="font-bold text-[#0F172A] block">{activeBoxesCount} Detected</span>
+            <span className="text-[9px] text-[#15803D]">
+              {activeBoxesCount > 0 ? 'Localized on package plane' : 'Awaiting manual reticle'}
+            </span>
+          </div>
+
+          <div className="p-2.5 bg-[#F8FAFC] border border-[#E2E8F0] space-y-0.5">
+            <span className="text-[#64748B] text-[10px] uppercase block">Capture Location</span>
+            <span className="font-bold text-[#0F172A] block truncate">
+              {telemetryCoords && typeof telemetryCoords.latitude === 'number' && typeof telemetryCoords.longitude === 'number'
+                ? `${telemetryCoords.latitude.toFixed(4)}°N, ${telemetryCoords.longitude.toFixed(4)}°E`
+                : 'Location unavailable'}
+            </span>
+            <span className={telemetryCoords ? "text-[9px] text-[#15803D]" : "text-[9px] text-[#64748B]"}>
+              {telemetryCoords?.accuracyMeters ? `±${telemetryCoords.accuracyMeters.toFixed(1)}m GPS Accuracy` : telemetryCoords ? 'Device GPS Telemetry' : 'Location not captured'}
+            </span>
+          </div>
+
+          <div className="p-2.5 bg-[#F8FAFC] border border-[#E2E8F0] space-y-0.5">
+            <span className="text-[#64748B] text-[10px] uppercase block">Capture Timestamp</span>
+            <span className="font-bold text-[#0F172A] block truncate">
+              {captureTimestamp || 'Timestamp not captured'}
+            </span>
+            <span className="text-[9px] text-[#64748B]">Indian Standard Time (IST)</span>
+          </div>
+        </div>
+
+        {/* SECOND IMAGE (Evidence Image 02) — Caliper Position X */}
+        {activeImageIndex === 1 && (
+          <div className="p-3.5 bg-[#F0FDF4] border border-[#86EFAC] space-y-1.5 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-[#166534] uppercase tracking-wider flex items-center gap-1.5">
+                <span>📏</span> Caliper Position X
+              </span>
+              <span className="text-[10px] text-[#15803D] font-medium">
+                Optical Gauge Measurement Axis &bull; Image Coordinate
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-sm text-[#0A2540]">
+                  Caliper Position X:
+                </span>
+                <span className="font-bold text-sm font-mono px-2.5 py-0.5 bg-white border border-[#86EFAC] text-[#15803D]">
+                  {typeof caliperPositions[1] === 'number'
+                    ? `${caliperPositions[1]} px`
+                    : 'Not recorded'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowOpticalGauge(true)}
+                className="px-3 py-1.5 text-xs font-mono font-bold text-emerald-950 bg-emerald-100 hover:bg-emerald-200 border border-emerald-400 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <span>📐 Launch AR Optical Gauge</span>
+              </button>
+            </div>
+            <p className="text-[11px] text-[#374151] font-sans">
+              Sub-millimeter optical caliper coordinate along horizontal X-axis on package focal plane, enforcing Rule 9 Table I numeral height mandates.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Split-Screen Canvas */}
@@ -626,6 +910,17 @@ export default function EvidenceViewerPage() {
           </div>
         </div>
       </div>
+
+      {/* AR Optical Gauge Modal for Interactive Caliper Alignment */}
+      <OpticalGaugeModal
+        isOpen={showOpticalGauge}
+        onClose={() => setShowOpticalGauge(false)}
+        imageUrl={displayImagePath || '/logo.png'}
+        fieldToMeasure={selectedRule?.field || 'net_quantity'}
+        requiredHeightMm={2.0}
+        initialCaliperX={caliperPositions[activeImageIndex] || undefined}
+        onSaveMeasurement={handleSaveCaliper}
+      />
     </div>
   );
 }

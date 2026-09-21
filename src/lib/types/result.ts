@@ -16,6 +16,8 @@ export interface FontReadabilityAudit {
   required_height_mm: number;
   status: 'PASS' | 'FAIL' | 'REVIEW';
   standard_rule: string;
+  caliper_x?: number | null;
+  caliper_y?: number | null;
 }
 
 export interface RuleEvaluationDetail {
@@ -67,5 +69,7 @@ export interface ComplianceReport {
   gs1_verification?: any;
   fssai_verification?: any;
   forensic_manifest?: any;
+  caliper_x?: number | null;
+  caliper_y?: number | null;
 }
 

@@ -65,8 +65,8 @@ export default function AnalyticsGISPage() {
       if (!isSubscribed) return;
 
       if (!mapInstanceRef.current && mapContainerRef.current) {
-        // Default center: New Delhi National Capital Region
-        const map = L.map(mapContainerRef.current).setView([28.6139, 77.2090], 11);
+        // Default center: Pan-India National Overview
+        const map = L.map(mapContainerRef.current).setView([22.9734, 78.6569], 5);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           maxZoom: 19,
           attribution: '&copy; OpenStreetMap contributors | PARAKH GIS',
@@ -283,7 +283,7 @@ export default function AnalyticsGISPage() {
 
               <div className="pt-2 border-t border-slate-200 space-y-1 text-[11px] text-slate-500">
                 <div>Forensic Code: <strong className="text-slate-700">{selectedPoint.verificationCode}</strong></div>
-                <div>GPS Shutter: {selectedPoint.latitude.toFixed(4)}°N, {selectedPoint.longitude.toFixed(4)}°E</div>
+                <div>Capture Location: {selectedPoint.latitude.toFixed(4)}°N, {selectedPoint.longitude.toFixed(4)}°E</div>
                 <div>Timestamp: {new Date(selectedPoint.createdAt).toLocaleDateString('en-IN')}</div>
               </div>
 

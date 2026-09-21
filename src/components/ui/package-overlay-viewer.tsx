@@ -22,6 +22,7 @@ export interface PackageOverlayViewerProps {
   productName?: string;
   category?: string;
   compact?: boolean;
+  caliperX?: number | null;
 }
 
 const STATUTORY_FIELD_CONFIG: Array<{
@@ -78,6 +79,7 @@ export function PackageOverlayViewer({
   productName = 'Packaged Commodity',
   category = 'FOOD',
   compact = false,
+  caliperX,
 }: PackageOverlayViewerProps) {
   const [internalActiveIndex, setInternalActiveIndex] = useState(0);
   const [hoveredField, setHoveredField] = useState<string | null>(null);
@@ -120,6 +122,50 @@ export function PackageOverlayViewer({
   };
 
   const isMultiFace = facesList.length > 1;
+
+  // Derive declarations present on this face
+  const detectedDeclarations: string[] = [];
+  const faceBoxes = Object.entries(boundingBoxes || {}).filter(([_, b]) => {
+    if (!b) return false;
+    if (b.face) return b.face.toLowerCase() === activeFace;
+    return internalActiveIndex === 0;
+  });
+  const faceBoxKeys = new Set(faceBoxes.map(([k]) => k));
+
+  if (faceBoxKeys.has('commodity_description') || (internalActiveIndex === 0 && rules.some((r) => r.field === 'commodity_description' && r.extracted_value))) {
+    detectedDeclarations.push('product name');
+  }
+  if (faceBoxKeys.has('net_quantity') || (internalActiveIndex === 0 && rules.some((r) => r.field === 'net_quantity' && r.extracted_value)) || (internalActiveIndex === 1 && faceBoxKeys.has('net_quantity'))) {
+    detectedDeclarations.push('net quantity');
+  }
+  if (faceBoxKeys.has('mrp') || (internalActiveIndex === 0 && rules.some((r) => r.field === 'mrp' && r.extracted_value))) {
+    detectedDeclarations.push('MRP');
+  }
+  if (faceBoxKeys.has('manufacturer_name') || (activeFace === 'back' && rules.some((r) => r.field === 'manufacturer_name' && r.extracted_value)) || (internalActiveIndex === 1 && rules.some((r) => r.field === 'manufacturer_name' && r.extracted_value))) {
+    detectedDeclarations.push('manufacturer address');
+  }
+  if (faceBoxKeys.has('consumer_care') || (activeFace === 'back' && rules.some((r) => r.field === 'consumer_care' && r.extracted_value)) || (internalActiveIndex === 1 && rules.some((r) => r.field === 'consumer_care' && r.extracted_value))) {
+    detectedDeclarations.push('consumer-care details');
+  }
+  if (faceBoxKeys.has('country_of_origin') || (activeFace === 'side' && rules.some((r) => r.field === 'country_of_origin' && r.extracted_value))) {
+    detectedDeclarations.push('country of origin');
+  }
+  if (faceBoxKeys.has('month_year') || activeFace === 'top' || (internalActiveIndex === 1 && !faceBoxKeys.has('commodity_description') && rules.some((r) => r.field === 'month_year' && r.extracted_value))) {
+    detectedDeclarations.push('batch/manufacturing information');
+  }
+  if (typeof caliperX === 'number') {
+    detectedDeclarations.push('measurement evidence');
+  }
+
+  const surfaceHeader = activeFace === 'front' ? 'Front panel' : activeFace === 'back' ? 'Back panel' : activeFace === 'side' ? 'Side panel' : `${activeFace} panel`;
+  const imageContentsText =
+    detectedDeclarations.length === 0
+      ? `${surfaceHeader} — No mandatory declarations detected on this surface`
+      : detectedDeclarations.length === 1
+      ? `${surfaceHeader} — ${detectedDeclarations[0]} declaration`
+      : detectedDeclarations.length === 2
+      ? `${surfaceHeader} — ${detectedDeclarations[0]} and ${detectedDeclarations[1]}`
+      : `${surfaceHeader} — ${detectedDeclarations.slice(0, -1).join(', ')} and ${detectedDeclarations[detectedDeclarations.length - 1]}`;
 
   return (
     <div className="bg-white border border-[#CBD5E1] shadow-xs flex flex-col">
@@ -214,6 +260,31 @@ export function PackageOverlayViewer({
             );
           })}
         </div>
+      </div>
+
+      {/* Evidence Image Content Card */}
+      <div className="px-3.5 py-2.5 bg-[#F8FAFC] border-b border-[#CBD5E1] space-y-1 font-mono text-xs">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider">
+            What this image contains
+          </span>
+          <span className="text-[10px] text-[#0A2540] font-semibold">
+            {currentFaceItem?.name || `Surface: ${activeFace.toUpperCase()} Panel`}
+          </span>
+        </div>
+        <p className="text-xs font-semibold text-[#0A2540] font-sans">
+          {imageContentsText}
+        </p>
+        {internalActiveIndex === 1 && (
+          <div className="pt-1.5 mt-1 border-t border-[#E2E8F0] flex items-center justify-between text-[11px]">
+            <span className="font-bold text-[#166534]">
+              Caliper Position X: {typeof caliperX === 'number' ? `${caliperX} px` : 'Not recorded'}
+            </span>
+            <span className="text-[10px] text-[#64748B] font-sans">
+              (Measurement coordinate on package plane)
+            </span>
+          </div>
+        )}
       </div>
 
       {/* 2. IMAGE CANVAS WITH DIRECT BOUNDING BOX OVERLAYS */}

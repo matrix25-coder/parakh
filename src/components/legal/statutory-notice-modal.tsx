@@ -19,8 +19,8 @@ export function StatutoryNoticeModal({
   isOpen,
   onClose,
   report,
-  establishmentName = 'M/s Retail Enterprise & General Provision Store',
-  establishmentAddress = 'Shop No. 14, Main Market, New Delhi - 110001',
+  establishmentName = 'Commercial Retail Establishment',
+  establishmentAddress = 'Retail Premise under Inspection',
   inspectorName = 'Field Inspection Officer',
   manifest,
 }: StatutoryNoticeModalProps) {
