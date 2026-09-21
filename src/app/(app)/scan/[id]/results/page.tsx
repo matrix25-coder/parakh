@@ -13,9 +13,69 @@ import {
 } from '@/components/ui';
 import { ForensicBadge } from '@/components/ui/forensic-badge';
 import { UspAuditCard } from '@/components/ui/usp-audit-card';
+import { OpticalGaugeModal } from '@/components/ui/optical-gauge-modal';
 import type { ComplianceReport, FontReadabilityAudit, RuleEvaluationDetail } from '@/lib/types';
 import { getScanFromClient, saveScanToClient, syncScanToServer } from '@/lib/client-scan-cache';
 import { getApiUrl } from '@/lib/api-config';
+
+function deriveResultImageContents(
+  surface: string,
+  imageIdx: number,
+  extracted: any,
+  boxes: Record<string, any>,
+  caliperX?: number | null
+): string {
+  const normSurface = (surface || 'FRONT').toUpperCase();
+  const surfaceLabel =
+    normSurface === 'FRONT'
+      ? 'Front panel'
+      : normSurface === 'BACK'
+      ? 'Back panel'
+      : normSurface === 'SIDE'
+      ? 'Side panel'
+      : normSurface === 'TOP'
+      ? 'Top panel'
+      : `${normSurface.toLowerCase()} panel`;
+
+  const detectedItems: string[] = [];
+  const boxKeys = new Set(Object.keys(boxes || {}));
+
+  if (boxKeys.has('commodity_description') || (imageIdx === 0 && (extracted?.productName || extracted?.commodityName))) {
+    detectedItems.push('product name');
+  }
+  if (boxKeys.has('net_quantity') || (imageIdx === 0 && extracted?.netQuantity?.value) || (imageIdx === 1 && extracted?.netQuantity?.value && boxKeys.has('net_quantity'))) {
+    detectedItems.push('net quantity');
+  }
+  if (boxKeys.has('mrp') || (imageIdx === 0 && (extracted?.mrp?.value || extracted?.mrp?.raw))) {
+    detectedItems.push('MRP');
+  }
+  if (boxKeys.has('manufacturer_name') || (normSurface === 'BACK' && (extracted?.manufacturer || extracted?.address)) || (imageIdx === 1 && (extracted?.manufacturer || extracted?.address))) {
+    detectedItems.push('manufacturer address');
+  }
+  if (boxKeys.has('consumer_care') || (normSurface === 'BACK' && (extracted?.consumerCare?.phone || extracted?.consumerCare?.email || extracted?.consumerCare?.raw)) || (imageIdx === 1 && extracted?.consumerCare?.raw)) {
+    detectedItems.push('consumer-care details');
+  }
+  if (boxKeys.has('country_of_origin') || (normSurface === 'SIDE' && extracted?.countryOfOrigin)) {
+    detectedItems.push('country of origin');
+  }
+  if (boxKeys.has('month_year') || normSurface === 'TOP' || (imageIdx === 1 && (extracted?.manufacturingDate?.raw || extracted?.expiryDate?.raw) && !boxKeys.has('commodity_description'))) {
+    detectedItems.push('batch/manufacturing information');
+  }
+  if (typeof caliperX === 'number') {
+    detectedItems.push('measurement evidence');
+  }
+
+  if (detectedItems.length === 0) {
+    return `${surfaceLabel} — Overview of packaging panel — pending detailed OCR classification`;
+  }
+  if (detectedItems.length === 1) {
+    return `${surfaceLabel} — ${detectedItems[0]} declaration`;
+  }
+  if (detectedItems.length === 2) {
+    return `${surfaceLabel} — ${detectedItems[0]} and ${detectedItems[1]}`;
+  }
+  return `${surfaceLabel} — ${detectedItems.slice(0, -1).join(', ')} and ${detectedItems[detectedItems.length - 1]}`;
+}
 
 export default function ComplianceResultsPage() {
   const params = useParams();
@@ -28,8 +88,11 @@ export default function ComplianceResultsPage() {
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   const [expandedRuleCode, setExpandedRuleCode] = useState<string | null>(null);
   const [selectedField, setSelectedField] = useState<string | null>(null);
-  const [showVisualEvidence, setShowVisualEvidence] = useState(false);
+  const [showVisualEvidence, setShowVisualEvidence] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [showOpticalGauge, setShowOpticalGauge] = useState(false);
+  const [activeGaugeImage, setActiveGaugeImage] = useState<string>('');
+  const [caliperPositions, setCaliperPositions] = useState<Record<number, number | null>>({});
 
   const applyScanRecord = (data: any) => {
     setScanData(data);
@@ -47,6 +110,24 @@ export default function ComplianceResultsPage() {
         setSelectedField(data.complianceResult.results[0].field);
       }
     }
+    const cx = data.caliper_x ?? data.complianceResult?.caliper_x ?? null;
+    if (cx != null) {
+      setCaliperPositions((prev) => ({ ...prev, 1: cx }));
+    }
+  };
+
+  const handleSaveCaliperMeasurement = (
+    field: string,
+    measuredMm: number,
+    pixelsPerMm: number,
+    caliperDetails?: any
+  ) => {
+    const xPos = caliperDetails?.caliperX ?? null;
+    setCaliperPositions((prev) => ({ ...prev, 1: xPos }));
+    if (report) {
+      setReport((prev) => (prev ? { ...prev, caliper_x: xPos } : prev));
+    }
+    setShowOpticalGauge(false);
   };
 
   useEffect(() => {
@@ -220,6 +301,162 @@ export default function ComplianceResultsPage() {
         productName={report.product_name}
         category={report.category}
       />
+
+      {/* ── STATUTORY PHOTOGRAPHIC EVIDENCE & METROLOGICAL DOSSIER ── */}
+      {(() => {
+        const rawImages: Array<{ face?: string; imagePath?: string; dataUrl?: string; name?: string }> =
+          (scanData?.images && scanData.images.length > 0)
+            ? scanData.images
+            : (scanData?.package_faces && scanData.package_faces.length > 0)
+            ? scanData.package_faces
+            : scanData?.image_path
+            ? [{ face: 'FRONT', imagePath: scanData.image_path, name: 'primary_display_panel.jpg' }]
+            : [];
+
+        if (rawImages.length === 0) return null;
+
+        return (
+          <div className="bg-white border border-[#CBD5E1] p-4 sm:p-5 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#E2E8F0] pb-3 gap-2">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 bg-[#0A2540]"></span>
+                  <span className="font-mono text-xs font-bold uppercase tracking-wider text-[#0A2540]">
+                    Statutory Physical Evidence Dossier
+                  </span>
+                  <span className="text-[10px] font-mono text-[#64748B]">
+                    ({rawImages.length} captured package {rawImages.length === 1 ? 'image' : 'images'})
+                  </span>
+                </div>
+                <p className="text-xs text-[#475569] font-sans mt-0.5">
+                  Photographic chain-of-custody verifying statutory declarations under Legal Metrology Rules, 2011.
+                </p>
+              </div>
+              <Link
+                href={`/scan/${id}/evidence`}
+                className="px-3 py-1.5 font-mono text-xs font-bold text-[#0A2540] bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#CBD5E1] transition-colors self-start sm:self-auto"
+              >
+                Open Full Evidence Workspace &rarr;
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {rawImages.map((img: any, idx: number) => {
+                const surfaceName = img.face ? `${img.face.toUpperCase()} Panel` : idx === 0 ? 'Front Panel (PDP)' : 'Back Panel (Info Panel)';
+                const contentsText = deriveResultImageContents(
+                  img.face || (idx === 0 ? 'FRONT' : 'BACK'),
+                  idx,
+                  scanData?.extractedData || scanData?.extracted_data,
+                  scanData?.extractedData?.boundingBoxes || {},
+                  idx === 1 ? (caliperPositions[1] ?? report?.caliper_x ?? scanData?.caliper_x ?? null) : null
+                );
+                const isSecondImage = idx === 1;
+                const currentCaliperX = caliperPositions[1] ?? report?.caliper_x ?? scanData?.caliper_x ?? null;
+                const coords = report?.forensic_manifest?.telemetry?.coordinates;
+                const timestamp = report?.forensic_manifest?.telemetry?.istTimestamp || scanData?.created_at;
+
+                return (
+                  <div
+                    key={idx}
+                    className={`border p-4 space-y-3 flex flex-col justify-between ${
+                      isSecondImage
+                        ? 'border-[#86EFAC] bg-[#F0FDF4]/30'
+                        : 'border-[#CBD5E1] bg-white'
+                    } shadow-2xs`}
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-2 font-mono text-xs">
+                        <span className="font-bold px-2 py-0.5 bg-[#0A2540] text-white text-[11px]">
+                          Evidence Image 0{idx + 1}
+                        </span>
+                        <span className="font-bold text-[#0A2540]">
+                          {surfaceName}
+                        </span>
+                      </div>
+
+                      {/* Image Preview */}
+                      <div className="w-full aspect-16/10 bg-[#F8FAFC] border border-[#E2E8F0] overflow-hidden relative flex items-center justify-center">
+                        {img.imagePath || img.dataUrl ? (
+                          <img
+                            src={img.imagePath || img.dataUrl}
+                            alt={`Evidence ${idx + 1} - ${surfaceName}`}
+                            className="w-full h-full object-contain"
+                          />
+                        ) : (
+                          <div className="text-center p-4">
+                            <span className="font-mono text-xs font-bold text-[#64748B] block">
+                              {surfaceName}
+                            </span>
+                            <span className="text-[10px] text-[#94A3B8] font-mono">
+                              Digital photograph captured during inspection
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* What this image contains */}
+                      <div className="p-2.5 bg-[#F8FAFC] border border-[#CBD5E1] space-y-1 font-mono text-xs">
+                        <span className="text-[10px] uppercase font-bold text-[#64748B] tracking-wider block">
+                          What this image contains:
+                        </span>
+                        <p className="text-xs font-semibold text-[#0A2540] font-sans">
+                          {contentsText}
+                        </p>
+                      </div>
+
+                      {/* Metadata fields */}
+                      <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
+                        <div className="p-2 bg-[#F8FAFC] border border-[#E2E8F0]">
+                          <span className="text-[#64748B] text-[10px] block uppercase">Capture Location:</span>
+                          <span className="font-bold text-[#0F172A] block truncate">
+                            {coords && typeof coords.latitude === 'number' && typeof coords.longitude === 'number'
+                              ? `${coords.latitude.toFixed(4)}°N, ${coords.longitude.toFixed(4)}°E`
+                              : 'Location unavailable'}
+                          </span>
+                        </div>
+
+                        <div className="p-2 bg-[#F8FAFC] border border-[#E2E8F0]">
+                          <span className="text-[#64748B] text-[10px] block uppercase">Capture Timestamp:</span>
+                          <span className="font-bold text-[#0F172A] block truncate">
+                            {timestamp ? new Date(timestamp).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'Timestamp not captured'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* For the SECOND image: Caliper Position X */}
+                    {isSecondImage && (
+                      <div className="pt-2 border-t border-[#86EFAC] space-y-1.5 font-mono">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-[#166534] flex items-center gap-1">
+                            <span>📏</span> Caliper Position X:
+                          </span>
+                          <span className="font-bold font-mono px-2 py-0.5 bg-white border border-[#86EFAC] text-[#15803D]">
+                            {typeof currentCaliperX === 'number' ? `${currentCaliperX} px` : 'Not recorded'}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-[#64748B] font-sans leading-tight">
+                          Note: Image pixel coordinate along horizontal measurement axis, not GPS.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveGaugeImage(img.imagePath || img.dataUrl || scanData?.image_path || '/logo.png');
+                            setShowOpticalGauge(true);
+                          }}
+                          className="w-full mt-1 px-3 py-1.5 bg-[#15803D] hover:bg-[#166534] text-white font-mono font-bold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                        >
+                          <span>📐 Launch AR Optical Gauge</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
 
       {/* ── VISUAL EVIDENCE TOGGLE BAR (Hidden by default, shown on click) ── */}
@@ -441,6 +678,16 @@ export default function ComplianceResultsPage() {
 
       {/* Font & Readability Analysis */}
       {fontAudits.length > 0 && <FontAuditCard audits={fontAudits} />}
+
+      {/* AR Optical Calibration Gauge Modal */}
+      <OpticalGaugeModal
+        isOpen={showOpticalGauge}
+        onClose={() => setShowOpticalGauge(false)}
+        imageUrl={activeGaugeImage || scanData?.image_path || '/logo.png'}
+        fieldToMeasure="numeral_height"
+        requiredHeightMm={2.0}
+        onSaveMeasurement={handleSaveCaliperMeasurement}
+      />
     </div>
 
   );

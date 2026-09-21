@@ -12,6 +12,63 @@ import { getScanFromClient, saveScanToClient } from '@/lib/client-scan-cache';
 import { getApiUrl } from '@/lib/api-config';
 import type { ComplianceReport, FontReadabilityAudit } from '@/lib/types';
 
+function deriveReportImageContents(
+  surface: string,
+  imageIdx: number,
+  extracted: any,
+  caliperX?: number | null
+): string {
+  const normSurface = (surface || 'FRONT').toUpperCase();
+  const surfaceLabel =
+    normSurface === 'FRONT'
+      ? 'Front panel'
+      : normSurface === 'BACK'
+      ? 'Back panel'
+      : normSurface === 'SIDE'
+      ? 'Side panel'
+      : normSurface === 'TOP'
+      ? 'Top panel'
+      : `${normSurface.toLowerCase()} panel`;
+
+  const detectedItems: string[] = [];
+
+  if (imageIdx === 0 && (extracted?.productName || extracted?.commodityName)) {
+    detectedItems.push('product name');
+  }
+  if ((imageIdx === 0 || normSurface === 'FRONT') && extracted?.netQuantity?.value) {
+    detectedItems.push('net quantity');
+  }
+  if ((imageIdx === 0 || normSurface === 'FRONT') && (extracted?.mrp?.value || extracted?.mrp?.raw)) {
+    detectedItems.push('MRP');
+  }
+  if ((normSurface === 'BACK' || imageIdx === 1) && (extracted?.manufacturer || extracted?.address)) {
+    detectedItems.push('manufacturer address');
+  }
+  if ((normSurface === 'BACK' || imageIdx === 1) && (extracted?.consumerCare?.phone || extracted?.consumerCare?.email || extracted?.consumerCare?.raw)) {
+    detectedItems.push('consumer-care details');
+  }
+  if (normSurface === 'SIDE' && extracted?.countryOfOrigin) {
+    detectedItems.push('country of origin');
+  }
+  if ((normSurface === 'TOP' || imageIdx === 1) && (extracted?.manufacturingDate?.raw || extracted?.expiryDate?.raw)) {
+    detectedItems.push('batch/manufacturing date');
+  }
+  if (typeof caliperX === 'number') {
+    detectedItems.push('calibrated optical measurement');
+  }
+
+  if (detectedItems.length === 0) {
+    return `${surfaceLabel} — Overview of packaging panel — pending detailed OCR classification`;
+  }
+  if (detectedItems.length === 1) {
+    return `${surfaceLabel} — ${detectedItems[0]} declaration`;
+  }
+  if (detectedItems.length === 2) {
+    return `${surfaceLabel} — ${detectedItems[0]} and ${detectedItems[1]}`;
+  }
+  return `${surfaceLabel} — ${detectedItems.slice(0, -1).join(', ')} and ${detectedItems[detectedItems.length - 1]}`;
+}
+
 export default function ComplianceReportPage() {
   const params = useParams();
   const id = (params?.id as string) || '';
@@ -24,6 +81,8 @@ export default function ComplianceReportPage() {
   const [imagePath, setImagePath] = useState<string>('');
   const [manifest, setManifest] = useState<any>(null);
   const [extractedData, setExtractedData] = useState<any>(null);
+  const [packageImages, setPackageImages] = useState<any[]>([]);
+  const [recordedCaliperX, setRecordedCaliperX] = useState<number | null>(null);
   const [showNoticeModal, setShowNoticeModal] = useState(false);
   const [showOpticalGauge, setShowOpticalGauge] = useState(false);
   const [fieldToMeasure, setFieldToMeasure] = useState('net_quantity');
@@ -44,6 +103,20 @@ export default function ComplianceReportPage() {
     if (data.image_path || data.imagePath) {
       setImagePath(data.image_path || data.imagePath);
     }
+    const imgs = (data.images && data.images.length > 0)
+      ? data.images
+      : (data.package_faces && data.package_faces.length > 0)
+      ? data.package_faces
+      : (data.image_path || data.imagePath)
+      ? [{ face: 'FRONT', imagePath: data.image_path || data.imagePath, name: 'primary_display_panel.jpg' }]
+      : [];
+    setPackageImages(imgs);
+
+    const cx = data.caliper_x ?? data.complianceResult?.caliper_x ?? null;
+    if (cx != null) {
+      setRecordedCaliperX(cx);
+    }
+
     const man = data.complianceResult?.forensic_manifest || data.forensicManifest || data.forensic_manifest;
     if (man) {
       setManifest(man);
@@ -316,6 +389,109 @@ export default function ComplianceReportPage() {
             </div>
           </div>
         </div>
+
+        {/* 3. Statutory Photographic Evidence & Metrological Calibration Record */}
+        {packageImages.length > 0 && (
+          <div className="space-y-3 font-mono text-xs">
+            <div className="flex items-center justify-between border-b border-[#CBD5E1] pb-2">
+              <span className="text-[10px] uppercase font-bold text-[#0A2540] tracking-wider block">
+                3. Statutory Photographic Evidence & Optical Metrology Record ({packageImages.length} {packageImages.length === 1 ? 'Image' : 'Images'})
+              </span>
+              <span className="text-[10px] text-[#64748B]">
+                Bharatiya Sakshya Adhiniyam, 2023 § 63 Certified
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {packageImages.map((img: any, idx: number) => {
+                const surfaceName = img.face ? `${img.face.toUpperCase()} Panel` : idx === 0 ? 'Front Panel (PDP)' : 'Back Panel (Info Panel)';
+                const isSecondImage = idx === 1;
+                const caliperVal = isSecondImage ? (recordedCaliperX ?? report.caliper_x ?? null) : null;
+                const contents = deriveReportImageContents(img.face, idx, extractedData, caliperVal);
+                const coords = manifest?.telemetry?.coordinates;
+                const timestamp = manifest?.telemetry?.istTimestamp || scanDate;
+
+                return (
+                  <div
+                    key={idx}
+                    className={`border p-4 space-y-3 bg-[#F8FAFC] ${
+                      isSecondImage ? 'border-[#86EFAC]' : 'border-[#CBD5E1]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-2">
+                      <span className="font-bold text-[#0A2540]">
+                        Evidence Photo 0{idx + 1}: {surfaceName}
+                      </span>
+                      <span className="text-[10px] text-[#64748B]">
+                        {img.name || `photo_0${idx + 1}.jpg`}
+                      </span>
+                    </div>
+
+                    {/* Thumbnail preview */}
+                    <div className="w-full aspect-16/10 bg-white border border-[#E2E8F0] overflow-hidden flex items-center justify-center">
+                      {img.imagePath || img.dataUrl ? (
+                        <img
+                          src={img.imagePath || img.dataUrl}
+                          alt={`Evidence Photo 0${idx + 1}`}
+                          className="w-full h-full object-contain"
+                        />
+                      ) : (
+                        <div className="text-center p-3 text-[#64748B] text-xs">
+                          {surfaceName} Photogrammetric Capture
+                        </div>
+                      )}
+                    </div>
+
+                    {/* What this image contains */}
+                    <div className="p-2.5 bg-white border border-[#CBD5E1] space-y-0.5">
+                      <span className="text-[10px] uppercase font-bold text-[#64748B] block">
+                        What this image contains:
+                      </span>
+                      <p className="text-xs font-semibold text-[#0A2540] font-sans">
+                        {contents}
+                      </p>
+                    </div>
+
+                    {/* Telemetry info */}
+                    <div className="grid grid-cols-2 gap-2 text-[10px]">
+                      <div className="p-2 bg-white border border-[#E2E8F0]">
+                        <span className="text-[#64748B] block">Capture Location:</span>
+                        <span className="font-bold text-[#0F172A] block truncate">
+                          {coords && typeof coords.latitude === 'number' && typeof coords.longitude === 'number'
+                            ? `${coords.latitude.toFixed(4)}°N, ${coords.longitude.toFixed(4)}°E`
+                            : 'Location unavailable'}
+                        </span>
+                      </div>
+                      <div className="p-2 bg-white border border-[#E2E8F0]">
+                        <span className="text-[#64748B] block">Capture Timestamp:</span>
+                        <span className="font-bold text-[#0F172A] block truncate">
+                          {timestamp}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* For the SECOND image: Caliper Position X */}
+                    {isSecondImage && (
+                      <div className="p-2.5 bg-[#F0FDF4] border border-[#86EFAC] space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-[#166534]">
+                            Caliper Position X:
+                          </span>
+                          <span className="font-bold font-mono px-2 py-0.5 bg-white border border-[#86EFAC] text-[#15803D]">
+                            {typeof caliperVal === 'number' ? `${caliperVal} px` : 'Not recorded'}
+                          </span>
+                        </div>
+                        <p className="text-[9px] text-[#64748B] font-sans">
+                          Image pixel coordinate along horizontal measurement axis, not GPS.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* 10. Final Legal Verdict Banner */}
         <div className={`p-6 border-2 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 ${
