@@ -27,11 +27,40 @@ export default function AnalyticsGISPage() {
           fetch(getApiUrl('/api/analytics/recidivism')).then((r) => r.json()),
         ]);
 
-        if (geoRes?.points) {
-          setPoints(geoRes.points);
-          if (geoRes.points.length > 0) {
-            setSelectedPoint(geoRes.points[0]);
-          }
+        let combinedPoints: GeospatialInspectionPoint[] = Array.isArray(geoRes?.points) ? geoRes.points : [];
+
+        // Also check client-side cached scan to ensure freshly completed scans appear immediately
+        if (typeof window !== 'undefined') {
+          try {
+            const rawLatest = sessionStorage.getItem('parakh_latest_scan') || localStorage.getItem('parakh_latest_scan');
+            if (rawLatest) {
+              const parsed = JSON.parse(rawLatest);
+              if (parsed && parsed.id && parsed.latitude && parsed.longitude) {
+                const exists = combinedPoints.some((p) => p.id === parsed.id);
+                if (!exists) {
+                  combinedPoints.unshift({
+                    id: parsed.id,
+                    productName: parsed.product_name || parsed.extractedData?.productName || 'Inspected Commodity',
+                    brandName: parsed.extractedData?.brand || 'Commercial Brand',
+                    establishmentName: parsed.establishment_name || 'Active Inspection Site',
+                    establishmentAddress: parsed.establishment_address || `GPS: ${parsed.latitude.toFixed(5)}°N, ${parsed.longitude.toFixed(5)}°E`,
+                    latitude: parsed.latitude,
+                    longitude: parsed.longitude,
+                    status: parsed.overall_status || 'NEEDS_REVIEW',
+                    violationsCount: parsed.violations_count || 0,
+                    violations: parsed.complianceResult?.violations || [],
+                    verificationCode: `PRK-EVI-${parsed.id.slice(0, 8).toUpperCase()}`,
+                    createdAt: parsed.created_at || new Date().toISOString(),
+                  });
+                }
+              }
+            }
+          } catch {}
+        }
+
+        setPoints(combinedPoints);
+        if (combinedPoints.length > 0) {
+          setSelectedPoint(combinedPoints[0]);
         }
         if (brandRes?.brands) {
           setBrands(brandRes.brands);
@@ -44,6 +73,24 @@ export default function AnalyticsGISPage() {
     }
     loadData();
   }, []);
+
+  const handlePurgeDummy = async () => {
+    if (!confirm('Purge all dummy/mock demonstration scans from the database? Authentic inspections will be preserved.')) return;
+    try {
+      const res = await fetch(getApiUrl('/api/scan/purge-dummy'), { method: 'POST' });
+      const data = await res.json();
+      alert(`Cleaned up ${data.deletedCount || 0} dummy scans.`);
+      window.location.reload();
+    } catch (err) {
+      alert('Failed to purge dummy scans.');
+    }
+  };
+
+  const handleCenterOnPoint = (pt: GeospatialInspectionPoint) => {
+    if (mapInstanceRef.current && pt) {
+      mapInstanceRef.current.setView([pt.latitude, pt.longitude], 15, { animate: true });
+    }
+  };
 
   // Initialize and update Leaflet Map
   useEffect(() => {
@@ -95,18 +142,19 @@ export default function AnalyticsGISPage() {
       filtered.forEach((pt) => {
         const color = pt.status === 'COMPLIANT' ? '#10B981' : pt.status === 'NON_COMPLIANT' ? '#EF4444' : '#F59E0B';
         const marker = L.circleMarker([pt.latitude, pt.longitude], {
-          radius: pt.status === 'NON_COMPLIANT' ? 10 : 7,
+          radius: pt.status === 'NON_COMPLIANT' ? 10 : 8,
           fillColor: color,
           color: '#ffffff',
           weight: 2,
           opacity: 1,
-          fillOpacity: 0.85,
+          fillOpacity: 0.9,
         }).addTo(map);
 
         marker.bindPopup(`
-          <div style="font-family: monospace; font-size: 11px; max-width: 200px;">
+          <div style="font-family: monospace; font-size: 11px; max-width: 220px;">
             <strong style="color: #0A2540; font-size: 12px;">${pt.establishmentName}</strong><br/>
             <span style="color: #64748B;">${pt.establishmentAddress}</span><br/>
+            <span style="color: #64748B; font-size: 10px;">Coords: ${pt.latitude.toFixed(5)}°N, ${pt.longitude.toFixed(5)}°E</span>
             <hr style="margin: 4px 0; border: 0; border-top: 1px solid #CBD5E1;" />
             <strong>Product:</strong> ${pt.productName}<br/>
             <strong>Brand:</strong> ${pt.brandName}<br/>
@@ -122,6 +170,19 @@ export default function AnalyticsGISPage() {
 
         markersRef.current.push(marker);
       });
+
+      // Automatically frame and fit map bounds to show ALL places where scans were done!
+      if (markersRef.current.length > 0) {
+        if (markersRef.current.length === 1) {
+          map.setView([filtered[0].latitude, filtered[0].longitude], 12);
+        } else {
+          const group = L.featureGroup(markersRef.current);
+          map.fitBounds(group.getBounds().pad(0.3), {
+            maxZoom: 15,
+            animate: true,
+          });
+        }
+      }
     }
 
     initLeaflet();
@@ -141,10 +202,18 @@ export default function AnalyticsGISPage() {
         title="Geospatial Enforcement & Brand Recidivism Intelligence"
         description="GIS monitoring command center tracking retail violation density clusters, tamper-evident field records, and multi-store repeat corporate offenders under Section 36(2)."
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handlePurgeDummy}
+              className="px-3 py-2 bg-slate-100 hover:bg-rose-50 text-rose-700 hover:text-rose-800 font-mono text-xs font-bold uppercase tracking-wider transition-colors border border-rose-200 flex items-center gap-1.5 cursor-pointer shadow-xs"
+              title="Remove dummy demonstration scans from the database"
+            >
+              <span>🗑️</span>
+              <span>Purge Dummy Scans</span>
+            </button>
             <Link
               href="/scan"
-              className="px-4 py-2 bg-[#0A2540] hover:bg-[#1E3A8A] text-white font-mono font-bold text-xs uppercase tracking-wider transition-colors border-t-2 border-t-[#EA580C] flex items-center gap-1.5 shadow-xs"
+              className="px-4 py-2 bg-[#0A2540] hover:bg-[#1E3A8A] text-white font-mono font-bold text-xs uppercase tracking-wider transition-colors border-t-2 border-t-[#EA580C] flex items-center gap-1.5 shadow-xs cursor-pointer"
             >
               <span>+ New Inspection</span>
             </Link>
@@ -189,7 +258,7 @@ export default function AnalyticsGISPage() {
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
               <h3 className="font-mono text-xs font-bold uppercase tracking-wider text-[#0A2540]">
-                Live Geographic Compliance Heatmap (Delhi-NCR & Urban Clusters)
+                Live Geographic Compliance Heatmap (GPS Field Locations)
               </h3>
             </div>
 
@@ -287,11 +356,29 @@ export default function AnalyticsGISPage() {
                 <div>Timestamp: {new Date(selectedPoint.createdAt).toLocaleDateString('en-IN')}</div>
               </div>
 
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => handleCenterOnPoint(selectedPoint)}
+                  className="py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs uppercase tracking-wider transition-colors flex items-center justify-center gap-1 cursor-pointer border border-slate-600"
+                  title="Zoom directly to this marker on the map"
+                >
+                  <span>📍</span>
+                  <span>Center Map</span>
+                </button>
+                <Link
+                  href={`/scan/${selectedPoint.id}/results`}
+                  className="py-2 bg-[#EA580C] hover:bg-orange-600 text-white font-bold text-xs uppercase tracking-wider transition-colors text-center shadow-xs"
+                >
+                  Inspect &rarr;
+                </Link>
+              </div>
+
               <Link
                 href={`/scan/${selectedPoint.id}/report`}
-                className="w-full block text-center py-2 bg-[#0A2540] hover:bg-[#1E3A8A] text-white font-bold text-xs uppercase tracking-wider transition-colors mt-2"
+                className="w-full block text-center py-2 bg-[#0A2540] hover:bg-[#1E3A8A] text-white font-bold text-xs uppercase tracking-wider transition-colors"
               >
-                View Full Statutory Dossier &rarr;
+                View Statutory Report &rarr;
               </Link>
             </div>
           )}

@@ -193,18 +193,41 @@ export default function InspectionsPage() {
     },
   ];
 
+  const handlePurgeDummy = async () => {
+    if (!confirm('Purge all dummy/mock demonstration scans from the database? Authentic inspections will be preserved.')) return;
+    try {
+      const res = await fetch(getApiUrl('/api/scan/purge-dummy'), { method: 'POST' });
+      const data = await res.json();
+      alert(`Cleaned up ${data.deletedCount || 0} dummy scans.`);
+      window.location.reload();
+    } catch (err) {
+      alert('Failed to purge dummy scans.');
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto w-full px-2 sm:px-4 py-2">
       <PageHeader
         title="Inspection History Repository"
         description="Statutory record archive of past packaged commodity compliance audits conducted under the Legal Metrology Act, 2009."
         actions={
-          <Link
-            href="/scan"
-            className="px-4 py-2 text-xs font-mono font-bold text-white bg-[#0A2540] hover:bg-[#1E3A8A] transition-colors border-t-2 border-t-[#EA580C] flex items-center gap-2 shadow-xs"
-          >
-            <span>+ New Inspection</span>
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handlePurgeDummy}
+              className="px-3 py-2 text-xs font-mono font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 transition-colors border border-rose-200 flex items-center gap-1.5 shadow-xs cursor-pointer"
+              title="Purge dummy demonstration test scans"
+            >
+              <span>🗑️</span>
+              <span>Purge Dummy Scans</span>
+            </button>
+            <Link
+              href="/scan"
+              className="px-4 py-2 text-xs font-mono font-bold text-white bg-[#0A2540] hover:bg-[#1E3A8A] transition-colors border-t-2 border-t-[#EA580C] flex items-center gap-2 shadow-xs cursor-pointer"
+            >
+              <span>+ New Inspection</span>
+            </Link>
+          </div>
         }
       />
 
@@ -218,7 +241,7 @@ export default function InspectionsPage() {
           </svg>
           <input
             type="text"
-            placeholder="Search by commodity name (e.g. Britannia Bourbon, Amrit Ghee, NutriCrunch), scan ID, or officer..."
+            placeholder="Search by commodity name (e.g. Vita Marie Gold, Biscuits, Kurkure), scan ID, or officer..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             onBlur={() => {

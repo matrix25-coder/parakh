@@ -265,7 +265,7 @@ export default function ComplianceResultsPage() {
     <div className="space-y-6 max-w-6xl mx-auto py-2">
       <PageHeader
         title="Compliance Results"
-        description="Deterministic statutory evaluation computed by the Rule Engine against the 10 Packaged Commodities Rules, 2011."
+        description="Deterministic statutory evaluation computed by the Rule Engine against the Legal Metrology (Packaged Commodities) Rules, 2011 (40 Statutory Rules)."
         actions={
           <div className="flex items-center gap-2">
             <Link

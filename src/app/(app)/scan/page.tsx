@@ -24,7 +24,11 @@ export default function ScanProductPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
+  const [resolutionMode, setResolutionMode] = useState<'native' | '720p' | '480p' | '1080p'>('native');
+  const [aspectRatioMode, setAspectRatioMode] = useState<'contain' | 'cover'>('contain');
   const [capturedSnapshot, setCapturedSnapshot] = useState<string | null>(null);
   const [selectedFace, setSelectedFace] = useState<PackageFace>('FRONT');
 
@@ -176,6 +180,16 @@ export default function ScanProductPage() {
   }, []);
 
 
+  // Detect mobile and set environment camera if applicable
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      if (isMobile) {
+        setFacingMode('environment');
+      }
+    }
+  }, []);
+
   // Initialize camera when camera tab is active
   useEffect(() => {
     if (activeTab === 'camera' && !capturedSnapshot) {
@@ -184,25 +198,81 @@ export default function ScanProductPage() {
       stopCamera();
     }
     return () => stopCamera();
-  }, [activeTab, facingMode, capturedSnapshot]);
+  }, [activeTab, facingMode, selectedDeviceId, resolutionMode, capturedSnapshot]);
 
-  const startCamera = async () => {
+  const startCamera = async (
+    overrideDevId?: string,
+    overrideRes?: 'native' | '720p' | '480p' | '1080p',
+    overrideFacing?: 'user' | 'environment'
+  ) => {
     setCameraError(null);
     stopCamera();
+
+    const devId = overrideDevId !== undefined ? overrideDevId : selectedDeviceId;
+    const res = overrideRes !== undefined ? overrideRes : resolutionMode;
+    const facing = overrideFacing !== undefined ? overrideFacing : facingMode;
+
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('Camera API not accessible in this environment or permission denied.');
       }
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: facingMode,
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-      });
+
+      // Build constraints
+      let videoConstraints: MediaTrackConstraints = {};
+
+      if (devId) {
+        videoConstraints.deviceId = { exact: devId };
+      } else if (facing) {
+        videoConstraints.facingMode = { ideal: facing };
+      }
+
+      if (res === '1080p') {
+        videoConstraints.width = { ideal: 1920 };
+        videoConstraints.height = { ideal: 1080 };
+      } else if (res === '720p') {
+        videoConstraints.width = { ideal: 1280 };
+        videoConstraints.height = { ideal: 720 };
+      } else if (res === '480p') {
+        videoConstraints.width = { ideal: 640 };
+        videoConstraints.height = { ideal: 480 };
+      }
+      // Note: In 'native' mode, no width/height constraints are imposed.
+      // This prevents the Windows Media Foundation stride pitch misalignment that causes horizontal scanline tearing!
+
+      let mediaStream: MediaStream;
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: Object.keys(videoConstraints).length > 0 ? videoConstraints : true,
+          audio: false,
+        });
+      } catch (constraintErr) {
+        console.warn('Initial camera constraints failed, attempting native driver fallback:', constraintErr);
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: devId ? { deviceId: { ideal: devId } } : true,
+          audio: false,
+        });
+      }
+
       setStream(mediaStream);
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current?.play().catch(() => {});
+        };
+      }
+
+      // Populate camera list once permission is granted (labels are now readable)
+      if (navigator.mediaDevices.enumerateDevices) {
+        navigator.mediaDevices
+          .enumerateDevices()
+          .then((devices) => {
+            const videoInputs = devices.filter((d) => d.kind === 'videoinput');
+            setVideoDevices(videoInputs);
+            if (!devId && videoInputs.length > 0 && !selectedDeviceId) {
+              setSelectedDeviceId(videoInputs[0].deviceId);
+            }
+          })
+          .catch(() => {});
       }
     } catch (err: any) {
       console.warn('Camera access note:', err);
@@ -217,6 +287,30 @@ export default function ScanProductPage() {
       stream.getTracks().forEach((track) => track.stop());
       setStream(null);
     }
+  };
+
+  const handleFlipCamera = () => {
+    if (videoDevices.length > 1) {
+      const currentIndex = videoDevices.findIndex((d) => d.deviceId === selectedDeviceId);
+      const nextIndex = (currentIndex + 1) % videoDevices.length;
+      const nextDev = videoDevices[nextIndex];
+      setSelectedDeviceId(nextDev.deviceId);
+      startCamera(nextDev.deviceId);
+    } else {
+      const nextFacing = facingMode === 'user' ? 'environment' : 'user';
+      setFacingMode(nextFacing);
+      startCamera(undefined, undefined, nextFacing);
+    }
+  };
+
+  const handleDeviceChange = (deviceId: string) => {
+    setSelectedDeviceId(deviceId);
+    startCamera(deviceId);
+  };
+
+  const handleResolutionChange = (res: 'native' | '720p' | '480p' | '1080p') => {
+    setResolutionMode(res);
+    startCamera(undefined, res);
   };
 
   const optimizeImageForInspection = (dataUrl: string, maxDimension = 1200, quality = 0.75): Promise<string> => {
@@ -843,14 +937,49 @@ export default function ScanProductPage() {
                 </div>
               ) : (
                 /* Live Camera Feed */
-                <div className="w-full flex flex-col items-center space-y-4">
+                <div className="w-full flex flex-col items-center space-y-3">
+                  {/* Camera Mode & Anti-Distortion Status Banner */}
+                  <div className="w-full max-w-lg flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 bg-[#1E293B]/90 border border-[#334155] text-[11px] font-mono">
+                    <div className="flex items-center gap-2 text-[#94A3B8]">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <span className="text-white font-bold">FEED</span>
+                      <span className="text-[#64748B]">|</span>
+                      <span>MODE: <span className="text-[#38BDF8] uppercase font-bold">{resolutionMode}</span></span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {resolutionMode !== 'native' ? (
+                        <button
+                          type="button"
+                          onClick={() => handleResolutionChange('native')}
+                          className="px-2 py-0.5 bg-[#EA580C] hover:bg-[#C2410C] text-white font-bold text-[10px] uppercase tracking-wider transition-colors flex items-center gap-1 cursor-pointer"
+                          title="Eliminates Windows camera driver stride scanlines & tearing artifacts"
+                        >
+                          <span>⚡ Fix Glitch (Native Stride)</span>
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-bold">
+                          <span>✓ Anti-Tear Stride Active</span>
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setAspectRatioMode((prev) => (prev === 'contain' ? 'cover' : 'contain'))}
+                        className="px-2 py-0.5 bg-[#334155] hover:bg-[#475569] text-white text-[10px] font-mono transition-colors cursor-pointer"
+                        title="Toggle Fit to Screen vs Fill & Crop"
+                      >
+                        {aspectRatioMode === 'contain' ? 'Fit (Natural)' : 'Fill (Crop)'}
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="relative border border-[#334155] max-w-lg w-full aspect-video bg-black overflow-hidden shadow-xs">
                     <video
                       ref={videoRef}
                       autoPlay
                       playsInline
                       muted
-                      className="w-full h-full object-cover"
+                      className={`w-full h-full ${aspectRatioMode === 'cover' ? 'object-cover' : 'object-contain'} bg-black`}
                     />
 
                     {/* Tactile Inspection Alignment HUD */}
@@ -887,14 +1016,14 @@ export default function ScanProductPage() {
                   {/* Hidden Canvas for Frame Capture */}
                   <canvas ref={canvasRef} className="hidden" />
 
-                  {/* Camera Controls Bar */}
-                  <div className="flex flex-wrap items-center justify-between w-full max-w-lg gap-3 pt-2">
+                  {/* Primary Camera Controls Bar */}
+                  <div className="flex flex-wrap items-center justify-between w-full max-w-lg gap-2 pt-1">
                     <div className="flex items-center gap-2">
                       <label className="text-[11px] font-mono text-[#94A3B8]">Tag Face:</label>
                       <select
                         value={selectedFace}
                         onChange={(e) => setSelectedFace(e.target.value as PackageFace)}
-                        className="bg-[#1E293B] border border-[#475569] text-white text-xs font-mono px-2 py-1 focus:outline-none"
+                        className="bg-[#1E293B] border border-[#475569] text-white text-xs font-mono px-2 py-1.5 focus:outline-none focus:border-[#38BDF8]"
                       >
                         <option value="FRONT">FRONT (PDP)</option>
                         <option value="BACK">BACK (DECLARATIONS)</option>
@@ -905,20 +1034,59 @@ export default function ScanProductPage() {
                     </div>
 
                     <button
+                      type="button"
                       onClick={handleCaptureFrame}
-                      className="px-6 py-2 bg-[#0A2540] hover:bg-[#1E3A8A] text-white font-mono text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-colors cursor-pointer border-t border-[#EA580C]"
+                      className="px-6 py-2 bg-[#0A2540] hover:bg-[#1E3A8A] text-white font-mono text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-colors cursor-pointer border-t-2 border-[#EA580C] shadow-sm"
                     >
                       <div className="w-2.5 h-2.5 rounded-full bg-[#EA580C] animate-pulse"></div>
                       <span>Capture Frame</span>
                     </button>
 
                     <button
-                      onClick={() => setFacingMode((prev) => (prev === 'user' ? 'environment' : 'user'))}
-                      className="px-3 py-1 bg-[#1E293B] hover:bg-[#334155] text-xs font-mono text-white transition-colors"
-                      title="Switch front/rear camera"
+                      type="button"
+                      onClick={handleFlipCamera}
+                      className="px-3 py-1.5 bg-[#1E293B] hover:bg-[#334155] text-xs font-mono text-white border border-[#475569] transition-colors cursor-pointer flex items-center gap-1.5"
+                      title="Switch front/rear camera or alternate device"
                     >
-                      Flip Camera
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2" />
+                      </svg>
+                      <span>Flip Cam</span>
                     </button>
+                  </div>
+
+                  {/* Hardware Device & Resolution Tuning Bar */}
+                  <div className="flex flex-wrap items-center justify-between w-full max-w-lg gap-2 px-3 py-2 bg-[#1E293B]/60 border border-[#334155]/60 text-xs font-mono">
+                    {videoDevices.length > 1 && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[#94A3B8] text-[11px]">Device:</span>
+                        <select
+                          value={selectedDeviceId}
+                          onChange={(e) => handleDeviceChange(e.target.value)}
+                          className="bg-[#0F172A] border border-[#475569] text-white text-[11px] font-mono px-2 py-1 max-w-[150px] truncate focus:outline-none"
+                        >
+                          {videoDevices.map((dev, idx) => (
+                            <option key={dev.deviceId || idx} value={dev.deviceId}>
+                              {dev.label || `Camera ${idx + 1}`}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-1.5 ml-auto">
+                      <span className="text-[#94A3B8] text-[11px]">Resolution:</span>
+                      <select
+                        value={resolutionMode}
+                        onChange={(e) => handleResolutionChange(e.target.value as any)}
+                        className="bg-[#0F172A] border border-[#475569] text-white text-[11px] font-mono px-2 py-1 focus:outline-none"
+                      >
+                        <option value="native">Native (Anti-Glitch)</option>
+                        <option value="480p">480p (SD)</option>
+                        <option value="720p">720p (HD)</option>
+                        <option value="1080p">1080p (FHD)</option>
+                      </select>
+                    </div>
                   </div>
 
                   {/* Native Mobile Camera & Gallery Options */}

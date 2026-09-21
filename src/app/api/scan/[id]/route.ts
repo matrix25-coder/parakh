@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getScanById, createScan } from '@/lib/db';
+import { getScanById, createScan, getDb } from '@/lib/db';
 
 export async function GET(
   req: NextRequest,
@@ -126,5 +126,30 @@ export async function POST(
   } catch (err: any) {
     console.error('Re-seed scan error:', err);
     return NextResponse.json({ error: 'Failed to re-seed scan record.' }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  req: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await context.params;
+    const db = getDb();
+    const result = db.prepare('DELETE FROM scan_history WHERE id = ?').run(id);
+
+    // Also clear memory cache if present
+    if ((globalThis as any).__PARAKH_PROCESS_SCANS__) {
+      (globalThis as any).__PARAKH_PROCESS_SCANS__.delete(id);
+    }
+
+    return NextResponse.json({
+      success: true,
+      deletedId: id,
+      deletedCount: result.changes,
+    });
+  } catch (err: any) {
+    console.error('Delete scan error:', err);
+    return NextResponse.json({ error: err.message || 'Failed to delete scan record.' }, { status: 500 });
   }
 }

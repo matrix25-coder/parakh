@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { Navbar } from '@/components/layout';
+import { STATUTORY_RULES } from '@/app/(app)/rules/page';
 
 // Commodity Sample Declarations for Live Verification Bench
 interface DeclarationItem {
@@ -229,19 +230,6 @@ const SAMPLES: CommoditySample[] = [
   },
 ];
 
-const STATUTORY_RULES = [
-  { code: 'PCR-001', section: 'Rule 6(1)(a)', name: 'Manufacturer / Packer Declaration', req: 'Name and complete registered address of manufacturer or packer', severity: 'HIGH' },
-  { code: 'PCR-002', section: 'Rule 6(1)(b)', name: 'Generic / Common Commodity Name', req: 'Generic or common name of the commodity inside package', severity: 'HIGH' },
-  { code: 'PCR-003', section: 'Rule 6(1)(c)', name: 'Net Quantity & Unit of Measurement', req: 'Net quantity declared in metric standard units (g, kg, ml, l)', severity: 'HIGH' },
-  { code: 'PCR-004', section: 'Rule 9 Table I', name: 'Minimum Numeral & Letter Height', req: 'Strict minimum typography height calculated from PDP area', severity: 'HIGH' },
-  { code: 'PCR-005', section: 'Rule 6(1)(d)', name: 'Month & Year of Manufacture / Packing', req: 'Pre-printed date declaration in MM/YYYY format', severity: 'HIGH' },
-  { code: 'PCR-006', section: 'Rule 6(1)(e)', name: 'Maximum Retail Price (MRP)', req: 'MRP in INR with statutory phrase "inclusive of all taxes"', severity: 'HIGH' },
-  { code: 'PCR-007', section: 'Rule 6(1)(da)', name: 'Country of Origin (Imported Commodities)', req: 'Explicit declaration of country of manufacture / assembly', severity: 'HIGH' },
-  { code: 'PCR-008', section: 'Rule 6(1)(a) prov.', name: 'Importer Corporate Details', req: 'Name and complete address of the domestic importer', severity: 'HIGH' },
-  { code: 'PCR-009', section: 'Rule 6(1)(f)', name: 'Consumer Care Contact Information', req: 'Name, address, telephone number and email of grievance cell', severity: 'MEDIUM' },
-  { code: 'PCR-010', section: 'Rule 6(1)(d) & FSSAI', name: 'Best Before / Expiry Declaration', req: 'Statutory expiration period for perishable commodities', severity: 'HIGH' },
-];
-
 export default function HomePage() {
   const [selectedSampleIndex, setSelectedSampleIndex] = useState(0);
   const [activeHotspotId, setActiveHotspotId] = useState<string | null>(null);
@@ -301,7 +289,7 @@ export default function HomePage() {
               {/* High-Level Trust Badges */}
               <div className="grid grid-cols-3 gap-3 pt-4 border-t border-[#E2E8F0] font-mono text-xs text-[#475569]">
                 <div>
-                  <span className="block font-bold text-[#0A2540] text-sm">10 Rules</span>
+                  <span className="block font-bold text-[#0A2540] text-sm">40 Rules</span>
                   <span>Full statutory coverage</span>
                 </div>
                 <div>
@@ -736,11 +724,16 @@ export default function HomePage() {
                 Legal Metrology Rules Matrix (GSR 202(E))
               </h2>
               <p className="text-xs text-[#475569] mt-0.5">
-                The 10 mandatory declarations enforced under the Legal Metrology (Packaged Commodities) Rules, 2011.
+                Statutory declarations enforced under the Legal Metrology (Packaged Commodities) Rules, 2011 (40 Rules Catalog).
               </p>
             </div>
             <div className="text-right font-mono text-xs text-[#64748B]">
-              SIH 2026 Problem Statement 26034
+              <Link
+                href="/rules"
+                className="px-3.5 py-1.5 bg-[#0A2540] hover:bg-[#1E3A8A] text-white font-bold transition-colors inline-flex items-center gap-1.5 border-t border-t-[#EA580C]"
+              >
+                <span>Full 40-Rule Catalog &rarr;</span>
+              </Link>
             </div>
           </div>
 
@@ -748,23 +741,27 @@ export default function HomePage() {
             <table className="w-full text-left text-xs font-mono border-collapse">
               <thead>
                 <tr className="bg-[#F1F5F9] text-[#0A2540] border-b border-[#CBD5E1]">
-                  <th className="py-3 px-4 font-bold">CODE</th>
-                  <th className="py-3 px-4 font-bold">STATUTORY SECTION</th>
-                  <th className="py-3 px-4 font-bold">MANDATORY DECLARATION</th>
-                  <th className="py-3 px-4 font-bold">STATUTORY REQUIREMENT</th>
-                  <th className="py-3 px-4 font-bold">SEVERITY</th>
+                  <th className="py-3 px-4 font-semibold">CODE</th>
+                  <th className="py-3 px-4 font-semibold">STATUTORY RULE</th>
+                  <th className="py-3 px-4 font-semibold">DECLARATION TITLE</th>
+                  <th className="py-3 px-4 font-semibold">VALIDATOR LOGIC</th>
+                  <th className="py-3 px-4 font-semibold">SEVERITY</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E2E8F0] bg-white">
-                {STATUTORY_RULES.map((rule) => (
+              <tbody className="divide-y divide-[#E2E8F0]">
+                {STATUTORY_RULES.slice(0, 10).map((rule) => (
                   <tr key={rule.code} className="hover:bg-[#F8FAFC]">
-                    <td className="py-3 px-4 font-bold text-[#0A2540]">{rule.code}</td>
-                    <td className="py-3 px-4 text-[#475569]">{rule.section}</td>
-                    <td className="py-3 px-4 font-sans font-semibold text-[#0F172A]">
-                      {rule.name}
+                    <td className="py-3 px-4 font-bold text-[#0A2540]">
+                      {rule.code}
                     </td>
-                    <td className="py-3 px-4 font-sans text-xs text-[#475569]">
-                      {rule.req}
+                    <td className="py-3 px-4 text-[#475569]">
+                      {rule.section}
+                    </td>
+                    <td className="py-3 px-4 font-sans font-semibold text-[#0F172A]">
+                      {rule.title}
+                    </td>
+                    <td className="py-3 px-4 font-sans text-[#475569] text-xs">
+                      {rule.validationLogic}
                     </td>
                     <td className="py-3 px-4">
                       <span
@@ -781,6 +778,19 @@ export default function HomePage() {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          <div className="p-4 bg-[#F8FAFC] border border-[#CBD5E1] flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-mono text-xs">
+            <span className="text-[#64748B]">
+              Showing Chapter II core retail rules. Complete enforcement catalog covers 40 rules across Chapters I–VI and Schedules I–VI.
+            </span>
+            <Link
+              href="/rules"
+              className="px-4 py-2 bg-[#0A2540] hover:bg-[#1E3A8A] text-white font-bold transition-colors inline-flex items-center gap-2 border-t-2 border-t-[#EA580C] self-start sm:self-auto shadow-xs"
+            >
+              <span>Explore All 40 Statutory Rules</span>
+              <span>&rarr;</span>
+            </Link>
           </div>
         </div>
       </section>

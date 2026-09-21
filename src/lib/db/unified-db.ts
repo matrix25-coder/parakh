@@ -136,105 +136,108 @@ export async function getUnifiedScanById(scanId: string, userId?: string): Promi
 }
 
 /**
- * Fetch geospatial inspection points across retail centres for GIS mapping
+ * Fetch genuine geospatial inspection points across retail centres for GIS mapping.
+ * Strictly uses authentic officer device coordinates (latitude & longitude).
+ * Excludes dummy/mock demonstration data and un-geocoded records.
  */
 export async function getGeospatialInspections(): Promise<GeospatialInspectionPoint[]> {
   const points: GeospatialInspectionPoint[] = [];
+  const coordCount = new Map<string, number>();
 
-  // Default demonstration hotspots across major retail hubs in Delhi-NCR / India
-  const DEFAULT_CENTERS = [
-    { name: 'Big Bazaar / Smart Bazaar', addr: 'Connaught Place, New Delhi', lat: 28.6315, lng: 77.2167 },
-    { name: 'Reliance Fresh Superstore', addr: 'Lajpat Nagar Central Market, New Delhi', lat: 28.5700, lng: 77.2400 },
-    { name: 'Nature Basket Gourmet Store', addr: 'Defence Colony Market, New Delhi', lat: 28.5733, lng: 77.2312 },
-    { name: 'Blinkit Fulfillment Dark Store', addr: 'Okhla Industrial Area Phase II, Delhi', lat: 28.5284, lng: 77.2730 },
-    { name: 'Zepto Quick-Commerce Hub', addr: 'Karol Bagh Retail Circle, New Delhi', lat: 28.6514, lng: 77.1907 },
-    { name: 'Wholesale Provision Store', addr: 'Khari Baoli Spice Mandi, Old Delhi', lat: 28.6582, lng: 77.2219 },
-    { name: 'Spencer Supermarket', addr: 'Cyber City, Sector 24, Gurugram', lat: 28.4950, lng: 77.0895 },
-    { name: 'Metro Cash & Carry Wholesale', addr: 'Shahdara Industrial Area, East Delhi', lat: 28.6734, lng: 77.2882 },
-  ];
+  // Helper to format authentic inspection points
+  const processRow = (row: any, idx: number) => {
+    // 1. Skip un-geocoded or invalid coordinates
+    if (row.latitude == null || row.longitude == null) return;
+    const lat = typeof row.latitude === 'number' ? row.latitude : parseFloat(row.latitude);
+    const lng = typeof row.longitude === 'number' ? row.longitude : parseFloat(row.longitude);
+    if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return;
 
-  // Try Supabase first
+    // 2. Reject known dummy/mock test scans
+    const isOldTestDate = row.created_at && (row.created_at.startsWith('2026-09-05') || row.created_at.startsWith('2026-09-06'));
+    const isDummyId = row.id && (row.id.startsWith('scn_') || row.id === 'wellcore-creatine-analysis');
+    const isDummyName = row.product_name === 'Amrit Pure Cow Ghee 500ml' || row.product_name === 'kk';
+    if (isOldTestDate || isDummyId || isDummyName) return;
+
+    // 3. Extract compliance and violations
+    let compliance: any = {};
+    try {
+      compliance = typeof row.compliance_result === 'string' ? JSON.parse(row.compliance_result) : (row.compliance_result || {});
+    } catch {}
+
+    const violations = Array.isArray(compliance.violations)
+      ? compliance.violations.map((v: any) => ({
+          rule_code: v.rule_code || 'PCR-GEN',
+          title: v.violation_message || 'Statutory Non-Compliance',
+        }))
+      : [];
+
+    // 4. Handle multiple inspections at the exact same physical coordinates
+    // Micro-offset (~20m radial spread) so officers can view and click every scanned product without occlusion
+    const coordKey = `${lat.toFixed(4)}_${lng.toFixed(4)}`;
+    const countAtLocation = coordCount.get(coordKey) || 0;
+    coordCount.set(coordKey, countAtLocation + 1);
+
+    let displayLat = lat;
+    let displayLng = lng;
+    if (countAtLocation > 0) {
+      const angle = (countAtLocation * (2 * Math.PI)) / 6; // 6-way radial dispersion
+      const offsetDeg = 0.00022; // ~22 meters
+      displayLat = lat + Math.sin(angle) * offsetDeg;
+      displayLng = lng + Math.cos(angle) * offsetDeg;
+    }
+
+    const brand = row.brand_name || compliance.brand || compliance.extractedData?.brand || 'Commercial Brand';
+    const estName = row.establishment_name?.trim() || `Field Inspection Point #${idx + 1}`;
+    const estAddress = row.establishment_address?.trim() || `GPS: ${lat.toFixed(5)}°N, ${lng.toFixed(5)}°E`;
+
+    points.push({
+      id: row.id,
+      productName: row.product_name || 'Packaged Commodity',
+      brandName: brand,
+      establishmentName: estName,
+      establishmentAddress: estAddress,
+      latitude: displayLat,
+      longitude: displayLng,
+      status: row.overall_status || 'NEEDS_REVIEW',
+      violationsCount: row.violations_count != null ? row.violations_count : violations.length,
+      violations,
+      verificationCode: row.verification_code || `PRK-EVI-${row.id.slice(0, 8).toUpperCase()}`,
+      createdAt: row.created_at,
+    });
+  };
+
+  // Try Supabase first if configured
   const supabase = getSupabase();
   if (supabase) {
     try {
       const { data } = await supabase
         .from('scan_history')
         .select('*')
+        .not('latitude', 'is', null)
+        .not('longitude', 'is', null)
         .order('created_at', { ascending: false })
-        .limit(100);
+        .limit(200);
 
       if (data && data.length > 0) {
-        data.forEach((row, idx) => {
-          let compliance: any = {};
-          try {
-            compliance = typeof row.compliance_result === 'string' ? JSON.parse(row.compliance_result) : row.compliance_result;
-          } catch {}
-
-          const violations = Array.isArray(compliance.violations)
-            ? compliance.violations.map((v: any) => ({ rule_code: v.rule_code, title: v.violation_message }))
-            : [];
-
-          const fallbackCenter = DEFAULT_CENTERS[idx % DEFAULT_CENTERS.length];
-          const lat = row.latitude ? parseFloat(row.latitude) : fallbackCenter.lat + (Math.sin(idx) * 0.015);
-          const lng = row.longitude ? parseFloat(row.longitude) : fallbackCenter.lng + (Math.cos(idx) * 0.015);
-
-          points.push({
-            id: row.id,
-            productName: row.product_name,
-            brandName: row.brand_name || 'Commercial Brand',
-            establishmentName: row.establishment_name || fallbackCenter.name,
-            establishmentAddress: row.establishment_address || fallbackCenter.addr,
-            latitude: lat,
-            longitude: lng,
-            status: row.overall_status,
-            violationsCount: row.violations_count || violations.length,
-            violations,
-            verificationCode: row.verification_code || `PRK-EVI-${row.id.slice(0, 6).toUpperCase()}`,
-            createdAt: row.created_at,
-          });
-        });
-
-        return points;
+        data.forEach((row, idx) => processRow(row, idx));
+        if (points.length > 0) return points;
       }
     } catch (err) {
       console.warn('Supabase geospatial query note:', err);
     }
   }
 
-  // SQLite fallback
+  // SQLite query for local database
   try {
     const db = getDb();
-    const rows = db.prepare('SELECT * FROM scan_history ORDER BY created_at DESC LIMIT 50').all() as ScanRecord[];
+    const rows = db.prepare(`
+      SELECT * FROM scan_history 
+      WHERE latitude IS NOT NULL AND longitude IS NOT NULL 
+      ORDER BY created_at DESC 
+      LIMIT 200
+    `).all() as ScanRecord[];
 
-    rows.forEach((row, idx) => {
-      let compliance: any = {};
-      try {
-        compliance = JSON.parse(row.compliance_result);
-      } catch {}
-
-      const violations = Array.isArray(compliance.violations)
-        ? compliance.violations.map((v: any) => ({ rule_code: v.rule_code, title: v.violation_message }))
-        : [];
-
-      const center = DEFAULT_CENTERS[idx % DEFAULT_CENTERS.length];
-      const lat = center.lat + (Math.sin(idx * 2) * 0.012);
-      const lng = center.lng + (Math.cos(idx * 2) * 0.012);
-
-      points.push({
-        id: row.id,
-        productName: row.product_name,
-        brandName: compliance.product_name || row.product_name,
-        establishmentName: center.name,
-        establishmentAddress: center.addr,
-        latitude: lat,
-        longitude: lng,
-        status: row.overall_status,
-        violationsCount: row.violations_count,
-        violations,
-        verificationCode: `PRK-EVI-${row.id.slice(0, 8).toUpperCase()}`,
-        createdAt: row.created_at,
-      });
-    });
+    rows.forEach((row, idx) => processRow(row, idx));
   } catch (err) {
     console.warn('SQLite geospatial query note:', err);
   }

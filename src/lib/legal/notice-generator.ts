@@ -73,25 +73,81 @@ export function mapViolationToActProvision(ruleCode: string): string {
     case 'PCR-002':
       return 'Rule 6(1)(b) r/w Section 36(1) of the Legal Metrology Act, 2009 (Absence of Generic Commodity Name)';
     case 'PCR-003':
+      return 'Rule 6(1)(c) r/w Section 36(1) of the Legal Metrology Act, 2009 (Net Quantity Declaration Defect)';
     case 'PCR-004':
-      return 'Rule 6(1)(c) & Rule 12 r/w Section 36(1) of the Legal Metrology Act, 2009 (Non-Standard Weight/Measure Unit)';
+      return 'Rule 12 & Second Schedule r/w Section 36(1) of the Legal Metrology Act, 2009 (Non-Standard Weight/Measure Unit Symbol)';
     case 'PCR-005':
       return 'Rule 6(1)(d) r/w Section 36(1) of the Legal Metrology Act, 2009 (Absence of Manufacturing/Packing Month & Year)';
     case 'PCR-006':
-      return 'Rule 6(1)(e) r/w Section 36(1) of the Legal Metrology Act, 2009 (Deceptive/Incomplete Maximum Retail Price)';
+      return 'Rule 6(1)(e) r/w Section 36(1) of the Legal Metrology Act, 2009 (Deceptive/Incomplete Maximum Retail Price & Tax Inclusivity)';
     case 'PCR-007':
+      return 'Rule 6(1)(da) r/w Section 36(1) of the Legal Metrology Act, 2009 (Failure to Disclose Country of Origin for Imported Commodity)';
     case 'PCR-008':
-      return 'Rule 6(1)(da) & Proviso r/w Section 36(1) of the Legal Metrology Act, 2009 (Failure to Disclose Origin/Importer)';
+      return 'Rule 6(1)(a) Proviso r/w Section 36(1) of the Legal Metrology Act, 2009 (Failure to Disclose Importer Corporate Identity in India)';
     case 'PCR-009':
       return 'Rule 6(1)(f) r/w Section 36(1) of the Legal Metrology Act, 2009 (Absence of Consumer Grievance Contact Channel)';
     case 'PCR-010':
-      return 'Rule 6(1)(d) & FSSAI r/w Section 36(1) of the Legal Metrology Act, 2009 (Omission of Expiration / Shelf-Life)';
+      return 'Rule 6(1)(d) Second Proviso r/w Section 36(1) of the Legal Metrology Act & FSS Act (Omission of Expiration / Shelf-Life)';
     case 'PCR-011':
       return 'Rule 6(1) r/w Section 36(1) of the Legal Metrology Act, 2009 (Deceptive GS1 Barcode / Unauthorized Brand Prefix)';
     case 'PCR-012':
       return 'Rule 6(1)(d) r/w Section 36(1) of the Legal Metrology Act, 2009 (Unregistered / Invalid FSSAI FoSCoS License)';
     case 'PCR-013':
       return 'Rule 6(11) r/w Section 36(1) of the Legal Metrology Act, 2009 (Violation of Mandatory Unit Sale Price Denomination)';
+    case 'PCR-014':
+      return 'Rule 9 & Table I r/w Section 36(1) of the Legal Metrology Act, 2009 (Numeral & Letter Font Height Below Statutory Minimum)';
+    case 'PCR-015':
+      return 'Rule 6(1)(g) & Rule 16 r/w Section 36(1) of the Legal Metrology Act, 2009 (Absence of Mandatory Dimensional Declarations)';
+    case 'PCR-016':
+      return 'Rule 6(2) r/w Section 36(1) of the Legal Metrology Act, 2009 (Omission of Unit-Wise Breakdown on Multi-Piece Package)';
+    case 'PCR-017':
+      return 'Rule 6(3) & Rule 14 r/w Section 36(1) of the Legal Metrology Act, 2009 (Defective Combination / Group Package Declarations)';
+    case 'PCR-018':
+      return 'Rule 6(4) r/w Section 36(1) of the Legal Metrology Act, 2009 (Prohibited Dual MRP / Altering Price Stickers)';
+    case 'PCR-019':
+      return 'Rule 6(8) r/w Section 36(1) of the Legal Metrology Act, 2009 (Declarations Inconspicuous Through Secondary Packaging)';
+    case 'PCR-020':
+      return 'Rule 6(10) r/w Section 36(1) of the Legal Metrology Act, 2009 (Failure to Display Mandatory Declarations on E-Commerce Listing)';
+    case 'PCR-021':
+      return 'Rule 7 & Rule 8 r/w Section 36(1) of the Legal Metrology Act, 2009 (Principal Display Panel Area Defect Below 40%)';
+    case 'PCR-022':
+      return 'Rule 10 & Rule 11 r/w Section 36(1) of the Legal Metrology Act, 2009 (Inadequate Visual Contrast / Illegible Declarations)';
+    case 'PCR-023':
+      return 'Rule 13 r/w Section 36(1) of the Legal Metrology Act, 2009 (Improper Unit Representation for Denominations < 1kg/1L)';
+    case 'PCR-024':
+      return 'Rule 15 r/w Section 36(1) of the Legal Metrology Act, 2009 (Defective Piece Count Declaration by Number)';
+    case 'PCR-025':
+      return 'Rule 17 r/w Section 36(1) of the Legal Metrology Act, 2009 (Deceptive Packaging / Slack Fill / False Bottoms)';
+    case 'PCR-026':
+      return 'Rule 18(1) & Rule 24 r/w Section 36(1) of the Legal Metrology Act, 2009 (Omission of Mandatory Wholesale Package Declarations)';
+    case 'PCR-027':
+      return 'Rule 18(2) r/w Section 36(1) of the Legal Metrology Act, 2009 (Selling Packaged Commodity Above Maximum Retail Price)';
+    case 'PCR-028':
+      return 'Rule 18(3) r/w Section 36(1) of the Legal Metrology Act, 2009 (Obliterating, Altering or Defacing Statutory Price/Declarations)';
+    case 'PCR-029':
+      return 'Rule 18(5) r/w Section 36(1) of the Legal Metrology Act, 2009 (Retail Dealer Possession of Non-Compliant Packages)';
+    case 'PCR-030':
+      return 'Rule 25 r/w Section 36(1) of the Legal Metrology Act, 2009 (Unauthorized Domestic Sale of Export-Only Packages)';
+    case 'PCR-031':
+      return 'Rule 26 of the Legal Metrology (Packaged Commodities) Rules, 2011 (Pack Size Exemption Verification)';
+    case 'PCR-032':
+      return 'Rule 27 r/w Section 36(1) of the Legal Metrology Act, 2009 (Failure to Register as Manufacturer/Packer/Importer)';
+    case 'PCR-033':
+      return 'Rule 30 r/w Section 15 & 16 of the Legal Metrology Act, 2009 (Inspection Powers, Search, Seizure and Record Examination)';
+    case 'PCR-034':
+      return 'Rule 31 & First Schedule r/w Section 30 & 36(1) of the Legal Metrology Act, 2009 (Net Content Below Maximum Permissible Error Limits)';
+    case 'PCR-035':
+      return 'Rule 32 r/w Section 36(1) of the Legal Metrology Act, 2009 (Statutory Penalties for Non-Standard Packages)';
+    case 'PCR-036':
+      return 'Rule 33 & Sixth Schedule r/w Section 48 of the Legal Metrology Act, 2009 (Compounding of Offences and Penalty Fees)';
+    case 'PCR-037':
+      return 'Rule 34 r/w Section 16 of the Legal Metrology Act, 2009 (Disposal and Custody of Seized Non-Standard Commodities)';
+    case 'PCR-038':
+      return 'Third & Fourth Schedules r/w Rule 31 of PCR, 2011 (Statistical Sample Selection & Net Content Error Evaluation)';
+    case 'PCR-039':
+      return 'Section 36(2) of the Legal Metrology Act, 2009 (Enhanced Punishment for Repeat Corporate Offences Across Stores)';
+    case 'PCR-040':
+      return 'Section 49 of the Legal Metrology Act, 2009 (Offences by Companies & Liability of Nominated Directors)';
     default:
       return 'Section 36(1) of the Legal Metrology Act, 2009 (Manufacture, packaging or sale of non-standard commodity packages)';
   }
