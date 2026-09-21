@@ -289,7 +289,13 @@ export default function ComplianceResultsPage() {
       <ForensicBadge
         verificationCode={report?.forensic_manifest?.verificationCode || scanData?.verification_code || `PRK-EVI-${id.slice(0, 8).toUpperCase()}-2026`}
         sha256Hash={report?.forensic_manifest?.rawImageSha256 || scanData?.forensic_hash}
-        coordinates={report?.forensic_manifest?.telemetry?.coordinates}
+        coordinates={
+          report?.forensic_manifest?.telemetry?.coordinates ||
+          scanData?.complianceResult?.forensic_manifest?.telemetry?.coordinates ||
+          (scanData?.latitude && scanData?.longitude
+            ? { latitude: scanData.latitude, longitude: scanData.longitude, accuracyMeters: scanData.accuracy_meters || scanData.accuracy }
+            : null)
+        }
         timestamp={report?.forensic_manifest?.telemetry?.istTimestamp || scanData?.created_at}
         inspectorName={scanData?.inspector_name || 'Enforcement Inspector'}
       />
@@ -352,7 +358,11 @@ export default function ComplianceResultsPage() {
                 );
                 const isSecondImage = idx === 1;
                 const currentCaliperX = caliperPositions[1] ?? report?.caliper_x ?? scanData?.caliper_x ?? null;
-                const coords = report?.forensic_manifest?.telemetry?.coordinates;
+                const coords = report?.forensic_manifest?.telemetry?.coordinates ||
+                  scanData?.complianceResult?.forensic_manifest?.telemetry?.coordinates ||
+                  (scanData?.latitude && scanData?.longitude
+                    ? { latitude: scanData.latitude, longitude: scanData.longitude, accuracyMeters: scanData.accuracy_meters || scanData.accuracy }
+                    : null);
                 const timestamp = report?.forensic_manifest?.telemetry?.istTimestamp || scanData?.created_at;
 
                 return (

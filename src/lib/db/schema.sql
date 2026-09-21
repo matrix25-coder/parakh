@@ -27,6 +27,10 @@ CREATE TABLE IF NOT EXISTS scan_history (
   overall_status TEXT NOT NULL,
   violations_count INTEGER NOT NULL DEFAULT 0,
   inspector_name TEXT,
+  latitude REAL,
+  longitude REAL,
+  altitude REAL,
+  accuracy_meters REAL,
   created_at TEXT NOT NULL,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );

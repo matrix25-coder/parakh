@@ -61,6 +61,18 @@ export async function GET(
       violations_count: record.violations_count,
       inspector_name: record.inspector_name,
       created_at: record.created_at,
+      latitude: record.latitude ?? null,
+      longitude: record.longitude ?? null,
+      altitude: record.altitude ?? null,
+      accuracy_meters: record.accuracy_meters ?? null,
+      establishment_name: record.establishment_name ?? null,
+      establishment_address: record.establishment_address ?? null,
+      coordinates: (record.latitude && record.longitude) ? {
+        latitude: record.latitude,
+        longitude: record.longitude,
+        altitude: record.altitude,
+        accuracyMeters: record.accuracy_meters,
+      } : null,
     });
   } catch (err: any) {
     console.error('Fetch scan error:', err);
@@ -101,6 +113,12 @@ export async function POST(
         overallStatus: scan.overall_status || scan.overallStatus || 'PENDING',
         violationsCount: scan.violations_count ?? scan.violationsCount ?? 0,
         inspectorName: scan.inspector_name || scan.inspectorName || 'Field Inspection Officer',
+        latitude: scan.latitude ?? null,
+        longitude: scan.longitude ?? null,
+        altitude: scan.altitude ?? null,
+        accuracyMeters: scan.accuracy_meters ?? scan.accuracy ?? null,
+        establishmentName: scan.establishment_name || scan.establishmentName || null,
+        establishmentAddress: scan.establishment_address || scan.establishmentAddress || null,
       });
     }
 

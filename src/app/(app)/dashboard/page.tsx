@@ -14,6 +14,9 @@ interface RecentInspectionItem {
   status: 'COMPLIANT' | 'NON_COMPLIANT' | 'NEEDS_REVIEW';
   violations: number;
   inspector: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  accuracy_meters?: number | null;
 }
 
 interface TopViolationItem {
@@ -170,7 +173,7 @@ export default function DashboardPage() {
             </Link>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-700/60 font-mono text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-3 border-t border-slate-700/60 font-mono text-xs">
             <div>
               <span className="text-slate-400 block text-[10px] uppercase">Inspection ID</span>
               <span className="text-white font-bold">
@@ -199,6 +202,14 @@ export default function DashboardPage() {
                 }`}
               >
                 {activeScan.overall_status?.replace(/_/g, ' ') || 'UNDER_REVIEW'}
+              </span>
+            </div>
+            <div>
+              <span className="text-slate-400 block text-[10px] uppercase">Capture Location</span>
+              <span className="text-slate-200 truncate block">
+                {activeScan.latitude && activeScan.longitude
+                  ? `${activeScan.latitude.toFixed(4)}°N, ${activeScan.longitude.toFixed(4)}°E`
+                  : 'Location unavailable'}
               </span>
             </div>
           </div>
@@ -375,8 +386,13 @@ export default function DashboardPage() {
                       <td className="p-3 font-bold text-[#0A2540] border-r border-[#CBD5E1]">
                         {row.scan_id}
                       </td>
-                      <td className="p-3 font-sans font-bold text-[#0F172A] border-r border-[#CBD5E1] max-w-[160px] truncate">
-                        {row.product}
+                      <td className="p-3 font-sans border-r border-[#CBD5E1] max-w-[170px]">
+                        <div className="font-bold text-[#0F172A] truncate">{row.product}</div>
+                        <div className="text-[10px] font-mono text-[#64748B] truncate">
+                          {row.latitude && row.longitude
+                            ? `📍 ${row.latitude.toFixed(4)}°N, ${row.longitude.toFixed(4)}°E`
+                            : '📍 Location unavailable'}
+                        </div>
                       </td>
                       <td className="p-3 text-[#64748B] border-r border-[#CBD5E1] whitespace-nowrap">
                         {row.date}

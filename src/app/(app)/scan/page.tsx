@@ -41,18 +41,21 @@ export default function ScanProductPage() {
   const [establishmentName, setEstablishmentName] = useState('Retail Commercial Establishment');
   const [establishmentAddress, setEstablishmentAddress] = useState('');
   const [geoCoords, setGeoCoords] = useState<{ latitude: number; longitude: number; altitude?: number; accuracy?: number } | null>(null);
-  const [geoStatus, setGeoStatus] = useState<'acquiring' | 'locked' | 'denied' | 'unavailable'>('acquiring');
+  const [geoStatus, setGeoStatus] = useState<'idle' | 'acquiring' | 'locked' | 'denied' | 'unavailable'>('idle');
+  const [showLocationPrompt, setShowLocationPrompt] = useState(false);
 
   const requestGeolocation = () => {
     if (typeof window === 'undefined') return;
     if (!('geolocation' in navigator)) {
       setGeoStatus('unavailable');
+      setGeoCoords(null);
       return;
     }
 
     setGeoStatus('acquiring');
 
-    // First attempt: High accuracy (satellite GPS)
+    // Attempt 1: High accuracy (GPS / precise hardware positioning)
+    // enableHighAccuracy: true, timeout: 10000, maximumAge: 0
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setGeoCoords({
@@ -62,28 +65,52 @@ export default function ScanProductPage() {
           accuracy: pos.coords.accuracy || undefined,
         });
         setGeoStatus('locked');
+        setShowLocationPrompt(false);
       },
       (err) => {
-        console.warn('High-accuracy GPS failed or timed out, falling back to network positioning:', err.message);
-        // Second attempt: Standard/Network accuracy (works on laptops, PCs, indoors)
+        console.warn(`Geolocation Attempt 1 (high accuracy) failed (code ${err.code}): ${err.message}`);
+
+        // PERMISSION_DENIED (error.code === 1): Immediately show permission denied, do NOT retry
+        if (err.code === 1) {
+          setGeoStatus('denied');
+          setGeoCoords(null);
+          return;
+        }
+
+        // POSITION_UNAVAILABLE (code 2) or TIMEOUT (code 3):
+        // Retry with Attempt 2: enableHighAccuracy: false, timeout: 15000, maximumAge: 0
         navigator.geolocation.getCurrentPosition(
-          (pos) => {
+          (fallbackPos) => {
             setGeoCoords({
-              latitude: pos.coords.latitude,
-              longitude: pos.coords.longitude,
-              altitude: pos.coords.altitude || undefined,
-              accuracy: pos.coords.accuracy || undefined,
+              latitude: fallbackPos.coords.latitude,
+              longitude: fallbackPos.coords.longitude,
+              altitude: fallbackPos.coords.altitude || undefined,
+              accuracy: fallbackPos.coords.accuracy || undefined,
             });
             setGeoStatus('locked');
+            setShowLocationPrompt(false);
           },
           (fallbackErr) => {
-            console.warn('Network positioning unavailable or permission denied:', fallbackErr.message);
-            setGeoStatus(fallbackErr.code === 1 ? 'denied' : 'unavailable');
+            console.warn(`Geolocation Attempt 2 (standard accuracy) failed (code ${fallbackErr.code}): ${fallbackErr.message}`);
+            if (fallbackErr.code === 1) {
+              setGeoStatus('denied');
+            } else {
+              setGeoStatus('unavailable');
+            }
+            setGeoCoords(null);
           },
-          { timeout: 10000, enableHighAccuracy: false, maximumAge: 60000 }
+          {
+            enableHighAccuracy: false,
+            timeout: 15000,
+            maximumAge: 0,
+          }
         );
       },
-      { timeout: 5000, enableHighAccuracy: true, maximumAge: 30000 }
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      }
     );
   };
 
@@ -343,10 +370,19 @@ export default function ScanProductPage() {
     }
   };
 
-  const handleStartExtraction = async () => {
+  const handleStartExtraction = async (forceProceedWithoutLocation = false) => {
     if (images.length === 0) return;
+
+    // Requirement 4: If location is not yet acquired when the user tries to start an inspection,
+    // prompt them with the Acquire button before proceeding.
+    if (!geoCoords && !forceProceedWithoutLocation) {
+      setShowLocationPrompt(true);
+      return;
+    }
+
     setIsExtracting(true);
     setScanError(null);
+    setShowLocationPrompt(false);
     setScanProgressStage('Uploading packaged commodity images...');
 
     try {
@@ -366,10 +402,10 @@ export default function ScanProductPage() {
           category,
           isImported,
           countryOfOrigin,
-          latitude: geoCoords?.latitude,
-          longitude: geoCoords?.longitude,
-          altitude: geoCoords?.altitude,
-          accuracy: geoCoords?.accuracy,
+          latitude: geoCoords ? geoCoords.latitude : null,
+          longitude: geoCoords ? geoCoords.longitude : null,
+          altitude: geoCoords?.altitude ?? null,
+          accuracy: geoCoords?.accuracy ?? null,
           establishmentName,
           establishmentAddress,
         }),
@@ -422,6 +458,12 @@ export default function ScanProductPage() {
             violations_count: data.violationsCount,
             inspector_name: 'Field Inspection Officer',
             created_at: new Date().toISOString(),
+            latitude: geoCoords ? geoCoords.latitude : null,
+            longitude: geoCoords ? geoCoords.longitude : null,
+            altitude: geoCoords?.altitude ?? null,
+            accuracy: geoCoords?.accuracy ?? null,
+            establishment_name: establishmentName || null,
+            establishment_address: establishmentAddress || null,
           };
           await saveScanToClient(clientScanRecord);
         } catch (e) {
@@ -469,46 +511,84 @@ export default function ScanProductPage() {
       )}
 
       {/* ── REAL-TIME GEOLOCATION TELEMETRY STATUS BAR ── */}
-      <div className="p-3 bg-white border border-[#CBD5E1] flex flex-wrap items-center justify-between gap-3 text-xs font-mono shadow-xs">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className={`w-2.5 h-2.5 rounded-full ${
-            geoStatus === 'locked'
-              ? 'bg-[#15803D] animate-pulse'
-              : geoStatus === 'acquiring'
-              ? 'bg-[#EAB308]'
-              : 'bg-[#DC2626]'
-          }`} />
-          <span className="font-bold text-[#0A2540] uppercase">
-            Statutory Geo-Tag Shutter Telemetry:
-          </span>
-          {geoStatus === 'locked' && geoCoords ? (
-            <span className="font-bold text-[#15803D]">
-              {geoCoords.latitude.toFixed(4)}°N, {geoCoords.longitude.toFixed(4)}°E
-              {geoCoords.accuracy ? ` (±${geoCoords.accuracy.toFixed(1)}m GPS Accuracy)` : ''}
-            </span>
-          ) : geoStatus === 'acquiring' ? (
-            <span className="text-[#B45309]">
-              Acquiring device GPS satellites & network location...
-            </span>
-          ) : geoStatus === 'denied' ? (
-            <span className="text-[#B91C1C]">
-              Permission Denied — Browser location access was dismissed. Click retry to grant.
-            </span>
-          ) : (
-            <span className="text-[#64748B]">
-              Location unavailable on this terminal / hardware.
-            </span>
-          )}
-        </div>
+      <div className="p-3.5 bg-white border border-[#CBD5E1] shadow-xs font-mono text-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start sm:items-center gap-3">
+            {geoStatus === 'acquiring' && (
+              <div className="flex items-center gap-2">
+                <span>🟡 Acquiring device location...</span>
+              </div>
+            )}
 
-        <button
-          type="button"
-          onClick={requestGeolocation}
-          className="px-3 py-1 bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#CBD5E1] text-[#0A2540] font-bold text-[11px] cursor-pointer flex items-center gap-1 transition-colors"
-        >
-          <span>📍</span>
-          <span>{geoStatus === 'locked' ? 'Refresh GPS' : 'Acquire Device Location'}</span>
-        </button>
+            {geoStatus === 'locked' && geoCoords && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                <span className="font-bold text-[#15803D]">
+                  🟢 Location captured
+                </span>
+                <span className="text-[#0A2540] font-semibold">
+                  Latitude: {geoCoords.latitude.toFixed(6)}°
+                </span>
+                <span className="text-[#0A2540] font-semibold">
+                  Longitude: {geoCoords.longitude.toFixed(6)}°
+                </span>
+                {geoCoords.accuracy !== undefined && (
+                  <span className="text-[#475569]">
+                    Accuracy: ±{Math.round(geoCoords.accuracy)} m
+                  </span>
+                )}
+              </div>
+            )}
+
+            {geoStatus === 'denied' && (
+              <div className="space-y-0.5">
+                <div className="font-bold text-[#DC2626]">
+                  🔴 Location permission denied
+                </div>
+                <div className="text-[11px] text-[#991B1B]">
+                  Please allow location access in your browser settings.
+                </div>
+              </div>
+            )}
+
+            {geoStatus === 'unavailable' && (
+              <div className="space-y-0.5">
+                <div className="font-bold text-[#DC2626]">
+                  🔴 Location unavailable
+                </div>
+                <div className="text-[11px] text-[#64748B]">
+                  Unable to obtain a device location.
+                </div>
+              </div>
+            )}
+
+            {geoStatus === 'idle' && (
+              <div className="flex items-center gap-2 text-[#64748B]">
+                <span>⚪ Location access not yet acquired.</span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            {!geoCoords && (
+              <button
+                type="button"
+                onClick={requestGeolocation}
+                disabled={geoStatus === 'acquiring'}
+                className="px-3 py-1.5 bg-[#0A2540] hover:bg-[#1E3A8A] text-white font-bold text-xs cursor-pointer flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-2xs"
+              >
+                <span>📍 Allow Location Access</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={requestGeolocation}
+              disabled={geoStatus === 'acquiring'}
+              className="px-3 py-1.5 bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#CBD5E1] text-[#0A2540] font-bold text-xs cursor-pointer flex items-center gap-1.5 transition-colors disabled:opacity-50"
+            >
+              <span>📍 Acquire Device Location</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Main Multi-Mode Workspace */}
@@ -968,7 +1048,7 @@ export default function ScanProductPage() {
           {/* Primary Action Button */}
           <div className="pt-4 border-t border-[#CBD5E1] space-y-2">
             <button
-              onClick={handleStartExtraction}
+              onClick={() => handleStartExtraction(false)}
               disabled={isExtracting || images.length === 0}
               className="w-full py-3.5 bg-[#0A2540] hover:bg-[#1E3A8A] text-white font-mono font-bold text-xs uppercase tracking-wider transition-colors border-t-2 border-t-[#EA580C] flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shadow-xs"
             >
@@ -990,6 +1070,86 @@ export default function ScanProductPage() {
           </div>
         </div>
       </div>
+
+      {/* Pre-Inspection Geolocation Prompt Modal (Requirement 4) */}
+      {showLocationPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 font-mono">
+          <div className="bg-white border-2 border-[#0A2540] max-w-md w-full p-5 space-y-4 shadow-xl">
+            <div className="flex items-start justify-between border-b border-[#CBD5E1] pb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">📍</span>
+                <h3 className="font-bold text-[#0A2540] text-sm uppercase">
+                  Device Location Not Acquired
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLocationPrompt(false)}
+                className="text-[#64748B] hover:text-[#0A2540] font-bold text-base cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-[#334155] font-sans leading-relaxed">
+              Device location is not yet acquired. Statutory Legal Metrology inspections require genuine device coordinates to establish court-admissible photographic evidence under Section 63 BSA / 65B IEA.
+            </p>
+
+            <div className="p-3 bg-[#F8FAFC] border border-[#CBD5E1] text-xs space-y-1">
+              {geoStatus === 'acquiring' && (
+                <div className="text-[#B45309] font-bold">
+                  🟡 Acquiring device location...
+                </div>
+              )}
+              {geoStatus === 'locked' && geoCoords && (
+                <div className="text-[#15803D] font-bold">
+                  🟢 Location captured: {geoCoords.latitude.toFixed(6)}°, {geoCoords.longitude.toFixed(6)}°
+                </div>
+              )}
+              {geoStatus === 'denied' && (
+                <div className="space-y-0.5">
+                  <div className="text-[#DC2626] font-bold">🔴 Location permission denied</div>
+                  <div className="text-[11px] text-[#991B1B] font-sans">
+                    Please allow location access in your browser settings.
+                  </div>
+                </div>
+              )}
+              {geoStatus === 'unavailable' && (
+                <div className="space-y-0.5">
+                  <div className="text-[#DC2626] font-bold">🔴 Location unavailable</div>
+                  <div className="text-[11px] text-[#64748B] font-sans">
+                    Unable to obtain a device location.
+                  </div>
+                </div>
+              )}
+              {geoStatus === 'idle' && (
+                <div className="text-[#64748B]">
+                  ⚪ Location has not yet been acquired for this inspection.
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-2 border-t border-[#CBD5E1]">
+              <button
+                type="button"
+                onClick={() => handleStartExtraction(true)}
+                className="px-3 py-2 border border-[#CBD5E1] text-[#64748B] hover:text-[#0A2540] hover:bg-[#F1F5F9] text-xs font-semibold cursor-pointer transition-colors"
+              >
+                Proceed without location
+              </button>
+              <button
+                type="button"
+                onClick={requestGeolocation}
+                disabled={geoStatus === 'acquiring'}
+                className="px-4 py-2 bg-[#0A2540] hover:bg-[#1E3A8A] text-white text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 transition-colors"
+              >
+                <span>📍</span>
+                <span>{geoStatus === 'acquiring' ? 'Acquiring...' : 'Acquire Device Location'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

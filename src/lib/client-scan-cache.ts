@@ -23,6 +23,12 @@ export interface CachedScanRecord {
   violations_count: number;
   inspector_name?: string;
   created_at?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  altitude?: number | null;
+  accuracy?: number | null;
+  establishment_name?: string | null;
+  establishment_address?: string | null;
 }
 
 const DB_NAME = 'parakh_client_db';

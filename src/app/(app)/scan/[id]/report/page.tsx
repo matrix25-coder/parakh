@@ -119,7 +119,29 @@ export default function ComplianceReportPage() {
 
     const man = data.complianceResult?.forensic_manifest || data.forensicManifest || data.forensic_manifest;
     if (man) {
-      setManifest(man);
+      const augmentedManifest = { ...man };
+      if (!augmentedManifest.telemetry) augmentedManifest.telemetry = {};
+      if (!augmentedManifest.telemetry.coordinates && data.latitude && data.longitude) {
+        augmentedManifest.telemetry.coordinates = {
+          latitude: data.latitude,
+          longitude: data.longitude,
+          altitude: data.altitude,
+          accuracyMeters: data.accuracy_meters || data.accuracy,
+        };
+      }
+      setManifest(augmentedManifest);
+    } else if (data.latitude && data.longitude) {
+      setManifest({
+        telemetry: {
+          coordinates: {
+            latitude: data.latitude,
+            longitude: data.longitude,
+            altitude: data.altitude,
+            accuracyMeters: data.accuracy_meters || data.accuracy,
+          },
+          istTimestamp: data.created_at ? new Date(data.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST' : undefined,
+        },
+      });
     }
     const ext = data.extractedData || data.extracted_data;
     if (ext) {

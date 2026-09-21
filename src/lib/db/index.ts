@@ -28,6 +28,12 @@ export interface ScanRecord {
   overall_status: 'COMPLIANT' | 'NON_COMPLIANT' | 'NEEDS_REVIEW';
   violations_count: number;
   inspector_name: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  altitude?: number | null;
+  accuracy_meters?: number | null;
+  establishment_name?: string | null;
+  establishment_address?: string | null;
   created_at: string;
 }
 
@@ -150,12 +156,22 @@ function initInlineSchema(db: DatabaseSync): void {
         overall_status TEXT NOT NULL,
         violations_count INTEGER NOT NULL DEFAULT 0,
         inspector_name TEXT,
+        latitude REAL,
+        longitude REAL,
+        altitude REAL,
+        accuracy_meters REAL,
         created_at TEXT NOT NULL,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
       CREATE INDEX IF NOT EXISTS idx_scan_history_user_id ON scan_history(user_id);
       CREATE INDEX IF NOT EXISTS idx_scan_history_created_at ON scan_history(created_at DESC);
     `);
+
+  // Safe migration for existing SQLite files missing the location columns
+  try { db.exec('ALTER TABLE scan_history ADD COLUMN latitude REAL;'); } catch {}
+  try { db.exec('ALTER TABLE scan_history ADD COLUMN longitude REAL;'); } catch {}
+  try { db.exec('ALTER TABLE scan_history ADD COLUMN altitude REAL;'); } catch {}
+  try { db.exec('ALTER TABLE scan_history ADD COLUMN accuracy_meters REAL;'); } catch {}
 }
 
 // ── USER REPOSITORY ──────────────────────────────────────────────────────────
@@ -225,6 +241,12 @@ export interface CreateScanParams {
   overallStatus: 'COMPLIANT' | 'NON_COMPLIANT' | 'NEEDS_REVIEW';
   violationsCount: number;
   inspectorName?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  altitude?: number | null;
+  accuracyMeters?: number | null;
+  establishmentName?: string | null;
+  establishmentAddress?: string | null;
 }
 
 const processScanCache = ((globalThis as any).__PARAKH_PROCESS_SCANS__ =
@@ -237,8 +259,8 @@ export function createScan(params: CreateScanParams): ScanRecord {
     INSERT INTO scan_history (
       id, user_id, product_name, category, is_imported, country_of_origin,
       image_path, package_faces, raw_ocr_text, extracted_data, compliance_result,
-      overall_status, violations_count, inspector_name, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      overall_status, violations_count, inspector_name, latitude, longitude, altitude, accuracy_meters, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -256,6 +278,10 @@ export function createScan(params: CreateScanParams): ScanRecord {
     params.overallStatus,
     params.violationsCount,
     params.inspectorName || null,
+    params.latitude ?? null,
+    params.longitude ?? null,
+    params.altitude ?? null,
+    params.accuracyMeters ?? null,
     now
   );
 
@@ -274,6 +300,10 @@ export function createScan(params: CreateScanParams): ScanRecord {
     overall_status: params.overallStatus,
     violations_count: params.violationsCount,
     inspector_name: params.inspectorName || null,
+    latitude: params.latitude ?? null,
+    longitude: params.longitude ?? null,
+    altitude: params.altitude ?? null,
+    accuracy_meters: params.accuracyMeters ?? null,
     created_at: now,
   };
 
@@ -407,6 +437,9 @@ export function getDashboardMetrics(userId: string) {
       status: s.overall_status,
       violations: s.violations_count,
       inspector: s.inspector_name || 'Enforcement Officer',
+      latitude: s.latitude ?? null,
+      longitude: s.longitude ?? null,
+      accuracy_meters: s.accuracy_meters ?? null,
     })),
     topViolations,
   };
