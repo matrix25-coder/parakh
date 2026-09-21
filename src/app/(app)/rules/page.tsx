@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState } from 'react';
 import Link from 'next/link';
@@ -116,7 +116,38 @@ const STATUTORY_RULES: RuleDef[] = [
     statutoryDescription: 'Packages of food commodities must bear date of packaging and best before or expiry date as prescribed under FSSAI regulations.',
     validationLogic: 'Mandatory for food categories. Verifies chronological alignment between packing date and shelf life duration.',
   },
+  {
+    code: 'PCR-011',
+    section: 'Rule 6(1) & GS1',
+    title: 'GS1 Barcode Prefix & Brand Integrity',
+    type: 'RegistryCrossValidator',
+    severity: 'HIGH',
+    category: 'GENERAL',
+    statutoryDescription: 'Retail barcodes must bear valid GS1 standard checksums and prefix allocations matching the declared corporate entity to counter deceptive packaging and counterfeits.',
+    validationLogic: 'Computes Modulo-10 checksum on GTIN-13/UPC and queries GS1 GEPIR master catalog for registered brand owner and declared catalog weight.',
+  },
+  {
+    code: 'PCR-012',
+    section: 'Rule 6(1)(d) & FSSAI Act',
+    title: 'FSSAI FoSCoS Food Safety License Verification',
+    type: 'LicenseValidator',
+    severity: 'HIGH',
+    category: 'FOOD',
+    statutoryDescription: 'Food packages must bear an active, verified 14-digit FSSAI License/Registration number issued to the manufacturer or packer.',
+    validationLogic: 'Validates 14-digit license structure, state code allocation, and verifies active license status against FoSCoS database records.',
+  },
+  {
+    code: 'PCR-013',
+    section: 'Rule 6(11)',
+    title: 'Mandatory Unit Sale Price (USP) Compliance',
+    type: 'ShrinkflationValidator',
+    severity: 'HIGH',
+    category: 'GENERAL',
+    statutoryDescription: 'Pre-packaged commodities containing more than one unit or specified weight/volume must prominently declare the Unit Sale Price in statutory base units (per 1g/100g/1kg, 1ml/100ml/1L, 1 number) to prevent shrinkflation.',
+    validationLogic: 'Computes USP = MRP / Normalized Quantity rounded to 2 decimal places, and flags non-standard base units or arithmetic divergence >2%.',
+  },
 ];
+
 
 export default function RulesExplorerPage() {
   const [selectedRule, setSelectedRule] = useState<RuleDef>(STATUTORY_RULES[0]);

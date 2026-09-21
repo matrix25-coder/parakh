@@ -8,6 +8,9 @@ import type {
 } from '@/lib/types';
 import type { StructuredProductData } from '@/lib/extraction/types';
 import { auditFontHeights } from './font-audit';
+import { evaluateUspCompliance } from './usp-calculator';
+import { verifyGs1Barcode } from '@/lib/registries/gs1-service';
+import { verifyFssaiLicense } from '@/lib/registries/fssai-service';
 
 export interface EvaluationContext {
   productName?: string;
@@ -529,6 +532,147 @@ export function evaluateCompliance(
     }
   }
 
+  // ── RULE 11: PCR-011 - GS1 Barcode & Brand Owner Integrity
+  let gs1Result: any = null;
+  {
+    const rawOcr = data.rawOcrText || '';
+    const detectedGtin = data.barcode?.gtin ||
+      rawOcr.match(/\b(890\d{10})\b/)?.[1] ||
+      rawOcr.match(/\b(\d{13})\b/)?.[1];
+
+    let status: RuleEvaluationDetail['status'] = 'REVIEW';
+    let message = 'No barcode detected on visible package panel. Barcode required for commercial retail sale.';
+
+    if (detectedGtin) {
+      gs1Result = verifyGs1Barcode(
+        detectedGtin,
+        data.brand || data.manufacturer,
+        data.netQuantity.value,
+        data.netQuantity.unit
+      );
+      status = gs1Result.statutoryStatus;
+      message = gs1Result.message;
+    }
+
+    const detail: RuleEvaluationDetail = {
+      rule_id: 11,
+      rule_code: 'PCR-011',
+      rule_number: 'Rule 6(1) & GS1',
+      title: 'GS1 Barcode Prefix & Brand Integrity',
+      status,
+      field: 'barcode_gtin',
+      extracted_value: detectedGtin || undefined,
+      normalized_value: gs1Result?.registryRecord?.brandOwner || undefined,
+      expected_value: 'Valid GS1 GTIN-13 matching manufacturer/brand identity',
+      message,
+      severity: 'HIGH',
+      confidence: detectedGtin ? (gs1Result?.isValidChecksum ? 0.95 : 0.6) : 0.5,
+      source_reference: 'Section 36(1) Legal Metrology Act & GS1 GEPIR Standard',
+      evidence: createEvidence('barcode_gtin', detectedGtin),
+    };
+    results.push(detail);
+
+    if (status === 'FAIL') {
+      violations.push({
+        rule_code: 'PCR-011',
+        rule_number: 'Rule 6(1) & GS1',
+        field: 'barcode_gtin',
+        severity: 'HIGH',
+        violation_message: message,
+      });
+    }
+  }
+
+  // ── RULE 12: PCR-012 - FSSAI FoSCoS License Validity
+  let fssaiResult: any = null;
+  {
+    let status: RuleEvaluationDetail['status'] = 'NOT_APPLICABLE';
+    let message = `Rule not applicable: Package category is '${category}' (Mandatory for FOOD commodities).`;
+
+    if (category === 'FOOD') {
+      const rawOcr = data.rawOcrText || '';
+      const licMatch = data.fssaiLicense?.licenseNumber ||
+        rawOcr.match(/(?:fssai|lic(?:\.|\s*no)?)\s*[:.-]?\s*([1-2]\d{13})\b/i)?.[1] ||
+        rawOcr.match(/\b([1-2]\d{13})\b/)?.[1];
+
+      if (licMatch) {
+        fssaiResult = verifyFssaiLicense(licMatch, data.manufacturer || data.brand);
+        status = fssaiResult.status;
+        message = fssaiResult.message;
+      } else {
+        status = 'FAIL';
+        message = 'Statutory Defect: Mandatory 14-digit FSSAI License/Registration missing on food packaging.';
+      }
+    }
+
+    const detail: RuleEvaluationDetail = {
+      rule_id: 12,
+      rule_code: 'PCR-012',
+      rule_number: 'Rule 6(1)(d) & FSSAI Act',
+      title: 'FSSAI FoSCoS Food Safety License Verification',
+      status,
+      field: 'fssai_license',
+      extracted_value: fssaiResult?.licenseNumber || undefined,
+      normalized_value: fssaiResult?.registryRecord?.companyName || undefined,
+      expected_value: 'Active 14-digit FSSAI license registered to food business operator',
+      message,
+      severity: 'HIGH',
+      confidence: category === 'FOOD' ? (fssaiResult ? 0.95 : 0.4) : 1.0,
+      source_reference: 'FSS (Packaging and Labelling) Regulations & Rule 6(1)(d) second proviso',
+      evidence: category === 'FOOD' ? createEvidence('fssai_license', fssaiResult?.licenseNumber) : undefined,
+    };
+    results.push(detail);
+
+    if (status === 'FAIL') {
+      violations.push({
+        rule_code: 'PCR-012',
+        rule_number: 'Rule 6(1)(d) & FSSAI Act',
+        field: 'fssai_license',
+        severity: 'HIGH',
+        violation_message: message,
+      });
+    }
+  }
+
+  // ── RULE 13: PCR-013 - Rule 6(11) Mandatory Unit Sale Price (USP)
+  const uspResult = evaluateUspCompliance({
+    netQuantityValue: data.netQuantity.value,
+    netQuantityUnit: data.netQuantity.unit,
+    mrpValue: data.mrp.value,
+    printedUspRaw: data.usp?.raw,
+    printedUspValue: data.usp?.value,
+    printedUspUnit: data.usp?.unit,
+  });
+  {
+    const detail: RuleEvaluationDetail = {
+      rule_id: 13,
+      rule_code: 'PCR-013',
+      rule_number: 'Rule 6(11)',
+      title: 'Mandatory Unit Sale Price (USP) Declaration',
+      status: uspResult.status,
+      field: 'unit_sale_price',
+      extracted_value: data.usp?.raw || (uspResult.printedUspValue ? `₹ ${uspResult.printedUspValue} per ${uspResult.printedUspUnit}` : undefined),
+      normalized_value: uspResult.calculatedUspDisplay || undefined,
+      expected_value: uspResult.calculatedUspDisplay || 'Statutory reference base (per 1g / 100g / 1kg / 1ml / 1L)',
+      message: uspResult.violationMessage || `Unit Sale Price (${uspResult.calculatedUspDisplay}) verified in accordance with statutory base denominations.`,
+      severity: 'HIGH',
+      confidence: data.mrp.value && data.netQuantity.value ? 0.95 : 0.5,
+      source_reference: uspResult.statutoryReference,
+      evidence: createEvidence('unit_sale_price', data.usp?.raw),
+    };
+    results.push(detail);
+
+    if (uspResult.status === 'FAIL') {
+      violations.push({
+        rule_code: 'PCR-013',
+        rule_number: 'Rule 6(11)',
+        field: 'unit_sale_price',
+        severity: 'HIGH',
+        violation_message: uspResult.violationMessage || 'Mandatory Unit Sale Price missing or arithmetically inaccurate.',
+      });
+    }
+  }
+
   // ── FONT & READABILITY AUDIT (Rule 9 Table I)
   const fontAudits = auditFontHeights(data);
 
@@ -569,5 +713,9 @@ export function evaluateCompliance(
     results,
     violations,
     font_audits: fontAudits,
+    usp_audit: uspResult,
+    gs1_verification: gs1Result,
+    fssai_verification: fssaiResult,
   };
 }
+

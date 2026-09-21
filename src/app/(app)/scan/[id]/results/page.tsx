@@ -11,6 +11,8 @@ import {
   FontAuditCard,
   PackageOverlayViewer,
 } from '@/components/ui';
+import { ForensicBadge } from '@/components/ui/forensic-badge';
+import { UspAuditCard } from '@/components/ui/usp-audit-card';
 import type { ComplianceReport, FontReadabilityAudit, RuleEvaluationDetail } from '@/lib/types';
 import { getScanFromClient, saveScanToClient, syncScanToServer } from '@/lib/client-scan-cache';
 import { getApiUrl } from '@/lib/api-config';
@@ -202,6 +204,15 @@ export default function ComplianceResultsPage() {
         }
       />
 
+      {/* Cryptographic Chain of Custody Stamp */}
+      <ForensicBadge
+        verificationCode={report?.forensic_manifest?.verificationCode || scanData?.verification_code || `PRK-EVI-${id.slice(0, 8).toUpperCase()}-2026`}
+        sha256Hash={report?.forensic_manifest?.rawImageSha256 || scanData?.forensic_hash}
+        coordinates={report?.forensic_manifest?.telemetry?.coordinates}
+        timestamp={report?.forensic_manifest?.telemetry?.istTimestamp || scanData?.created_at}
+        inspectorName={scanData?.inspector_name || 'Enforcement Inspector'}
+      />
+
       {/* Primary Compliance Verdict Banner */}
       <ComplianceVerdict
         status={report.overall_status}
@@ -209,6 +220,7 @@ export default function ComplianceResultsPage() {
         productName={report.product_name}
         category={report.category}
       />
+
 
       {/* ── VISUAL EVIDENCE TOGGLE BAR (Hidden by default, shown on click) ── */}
       <div
@@ -417,8 +429,18 @@ export default function ComplianceResultsPage() {
         })}
       </div>
 
+      {/* Unit Sale Price (USP) Statutory Audit */}
+      {report.usp_audit && (
+        <UspAuditCard
+          uspResult={report.usp_audit}
+          netQuantityRaw={scanData?.extracted_data ? (typeof scanData.extracted_data === 'string' ? JSON.parse(scanData.extracted_data)?.netQuantity?.raw : scanData.extracted_data?.netQuantity?.raw) : undefined}
+          mrpRaw={scanData?.extracted_data ? (typeof scanData.extracted_data === 'string' ? JSON.parse(scanData.extracted_data)?.mrp?.raw : scanData.extracted_data?.mrp?.raw) : undefined}
+        />
+      )}
+
       {/* Font & Readability Analysis */}
       {fontAudits.length > 0 && <FontAuditCard audits={fontAudits} />}
     </div>
+
   );
 }

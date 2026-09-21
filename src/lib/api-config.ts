@@ -31,6 +31,14 @@ export const API_CONFIG = {
  */
 export function getApiUrl(path: string): string {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  if (typeof window !== 'undefined') {
+    const isCapacitor = typeof (window as any).Capacitor?.isNativePlatform === 'function' 
+      ? (window as any).Capacitor.isNativePlatform() 
+      : window.location.protocol === 'capacitor:';
+    if (!isCapacitor) {
+      return normalizedPath;
+    }
+  }
   if (API_CONFIG.baseUrl) {
     return `${API_CONFIG.baseUrl}${normalizedPath}`;
   }

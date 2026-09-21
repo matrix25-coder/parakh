@@ -59,7 +59,9 @@ export function Navbar() {
     { name: 'Inspections', href: '/inspections' },
     { name: 'Reports', href: '/reports' },
     { name: 'Compare', href: '/compare' },
+    { name: 'GIS & Recidivism', href: '/analytics' },
   ];
+
 
   return (
     <header className="sticky top-0 z-50 select-none bg-white shadow-xs">

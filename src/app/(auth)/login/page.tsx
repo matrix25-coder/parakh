@@ -34,6 +34,11 @@ export default function LoginPage() {
       // Store in localStorage as well for client-side state hydration
       if (typeof window !== 'undefined') {
         localStorage.setItem('parakh_user', JSON.stringify(data.user));
+        if (process.env.NODE_ENV === 'development') {
+          void import('@reticlehq/react').then(({ reticle }) => {
+            reticle.signal('auth:granted');
+          }).catch(() => {});
+        }
       }
 
       router.push('/dashboard');
@@ -81,6 +86,7 @@ export default function LoginPage() {
               <input
                 type="email"
                 required
+                data-testid="login-email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="officer@parakh.gov.in"
@@ -97,6 +103,7 @@ export default function LoginPage() {
               <input
                 type="password"
                 required
+                data-testid="login-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
@@ -107,6 +114,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={isLoading}
+              data-testid="login-submit"
               className="w-full py-3 bg-[#0A2540] hover:bg-[#1E3A8A] text-white font-bold text-xs uppercase tracking-wider transition-colors border-t-2 border-t-[#EA580C] cursor-pointer disabled:opacity-50 shadow-xs flex items-center justify-center gap-2 mt-2"
             >
               {isLoading ? (

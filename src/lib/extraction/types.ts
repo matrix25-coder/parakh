@@ -59,4 +59,23 @@ export interface StructuredProductData {
   fieldConfidences: Record<string, number>;
   boundingBoxes: Record<string, BoundingBox>;
   pdpAreaCm2?: number;
+  usp?: {
+    raw?: string | null;
+    value?: number | null;
+    unit?: string | null;
+  };
+  barcode?: {
+    gtin?: string | null;
+    format?: string | null;
+  };
+  fssaiLicense?: {
+    licenseNumber?: string | null;
+    raw?: string | null;
+  };
+  fontCalibration?: {
+    pixelsPerMm?: number | null;
+    targetType?: string | null;
+    measuredHeights?: Record<string, number>;
+  };
 }
+

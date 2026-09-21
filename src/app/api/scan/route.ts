@@ -5,6 +5,8 @@ import { saveImageFile } from '@/lib/storage/file-storage';
 import { extractProductData } from '@/lib/extraction/ocr-service';
 import { evaluateCompliance } from '@/lib/rule-engine';
 import { createScan, getUserByEmail, createUser } from '@/lib/db';
+import { saveUnifiedScan } from '@/lib/db/unified-db';
+import { generateEvidenceManifest } from '@/lib/forensics/chain-of-custody';
 import { hashPassword } from '@/lib/auth/passwords';
 
 export const maxDuration = 60;
@@ -44,6 +46,13 @@ export async function POST(req: NextRequest) {
     let isImported = false;
     let countryOfOrigin = 'India';
     let packageFace = 'FRONT';
+    let latitude: number | null = null;
+    let longitude: number | null = null;
+    let altitude: number | null = null;
+    let accuracyMeters: number | null = null;
+    let establishmentName: string | null = null;
+    let establishmentAddress: string | null = null;
+    let deviceId: string | null = null;
 
     interface SavedImageFace {
       face: string;
@@ -63,6 +72,14 @@ export async function POST(req: NextRequest) {
       isImported = formData.get('isImported') === 'true';
       countryOfOrigin = (formData.get('countryOfOrigin') as string) || (isImported ? 'Imported' : 'India');
       packageFace = (formData.get('face') as string) || 'FRONT';
+
+      latitude = parseFloat(formData.get('latitude') as string) || null;
+      longitude = parseFloat(formData.get('longitude') as string) || null;
+      altitude = parseFloat(formData.get('altitude') as string) || null;
+      accuracyMeters = parseFloat(formData.get('accuracy') as string) || null;
+      establishmentName = (formData.get('establishmentName') as string) || null;
+      establishmentAddress = (formData.get('establishmentAddress') as string) || null;
+      deviceId = (formData.get('deviceId') as string) || null;
 
       if (!file) {
         return NextResponse.json(
@@ -87,13 +104,36 @@ export async function POST(req: NextRequest) {
     } else {
       // JSON body (supports images array or single image)
       const json = await req.json();
-      const { images: inputImages, image, productName: pName, category: cat, isImported: isImp, countryOfOrigin: origin, face } = json;
+      const {
+        images: inputImages,
+        image,
+        productName: pName,
+        category: cat,
+        isImported: isImp,
+        countryOfOrigin: origin,
+        face,
+        latitude: lat,
+        longitude: lng,
+        altitude: alt,
+        accuracy: acc,
+        establishmentName: estName,
+        establishmentAddress: estAddr,
+        deviceId: devId,
+      } = json;
 
       productName = pName || '';
       category = cat || 'FOOD';
       isImported = isImp === true;
       countryOfOrigin = origin || (isImported ? 'Imported' : 'India');
       packageFace = face || 'FRONT';
+
+      latitude = typeof lat === 'number' ? lat : (parseFloat(lat) || null);
+      longitude = typeof lng === 'number' ? lng : (parseFloat(lng) || null);
+      altitude = typeof alt === 'number' ? alt : (parseFloat(alt) || null);
+      accuracyMeters = typeof acc === 'number' ? acc : (parseFloat(acc) || null);
+      establishmentName = estName || null;
+      establishmentAddress = estAddr || null;
+      deviceId = devId || null;
 
       const rawImages: Array<{ dataUrl: string; face: string; name?: string }> = [];
 
@@ -313,7 +353,22 @@ export async function POST(req: NextRequest) {
       countryOfOrigin: extractedData.countryOfOrigin || countryOfOrigin,
     });
 
-    // 4. Save analysis record in database
+    // 4. Cryptographic Chain of Custody (Section 63 BSA / 65B IEA)
+    const now = new Date();
+    const telemetry = {
+      coordinates: (latitude && longitude) ? { latitude, longitude, altitude, accuracyMeters } : null,
+      deviceFingerprint: deviceId || req.headers.get('user-agent') || 'PARAKH-FIELD-TERMINAL',
+      inspectorId: authUser.id,
+      inspectorName: authUser.name,
+      captureTimestamp: now.toISOString(),
+      istTimestamp: now.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST',
+      platform: req.headers.get('sec-ch-ua-platform') || 'Capacitor-Android / Next.js',
+    };
+
+    const forensicManifest = generateEvidenceManifest(savedFaces[0].buffer, telemetry);
+    complianceResult.forensic_manifest = forensicManifest;
+
+    // 5. Save analysis record in database (SQLite + Supabase)
     const scanId = crypto.randomUUID();
     complianceResult.scan_id = undefined;
 
@@ -323,10 +378,11 @@ export async function POST(req: NextRequest) {
       name: f.name,
     }));
 
-    const scanRecord = createScan({
+    const scanRecord = await saveUnifiedScan({
       id: scanId,
       userId: authUser.id,
       productName: finalProductName,
+      brandName: extractedData.brand || null,
       category,
       isImported,
       countryOfOrigin,
@@ -338,6 +394,15 @@ export async function POST(req: NextRequest) {
       overallStatus: complianceResult.overall_status,
       violationsCount: complianceResult.violations.length,
       inspectorName: authUser.name,
+      latitude,
+      longitude,
+      altitude,
+      accuracyMeters,
+      establishmentName,
+      establishmentAddress,
+      forensicHash: forensicManifest.rawImageSha256,
+      verificationCode: forensicManifest.verificationCode,
+      forensicManifest,
     });
 
     return NextResponse.json({
@@ -352,6 +417,8 @@ export async function POST(req: NextRequest) {
       complianceResult,
       overallStatus: complianceResult.overall_status,
       violationsCount: complianceResult.violations.length,
+      forensicManifest,
+      verificationCode: forensicManifest.verificationCode,
     });
   } catch (err: any) {
     console.error('Scan processing error:', err);
@@ -361,3 +428,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+

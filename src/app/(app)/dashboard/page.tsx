@@ -44,7 +44,7 @@ export default function DashboardPage() {
   }, []);
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto py-2">
+    <div data-testid="officer-dashboard" className="space-y-6 max-w-7xl mx-auto py-2">
       <PageHeader
         title="Inspector Dashboard"
         description="Enforcement monitoring command centre tracking statutory packaged commodity compliance across surveyed retail batches."

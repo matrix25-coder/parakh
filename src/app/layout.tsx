@@ -1,3 +1,4 @@
+import { ReticleDev } from './reticle-dev';
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono, Archivo, Space_Grotesk } from "next/font/google";
 import { NativeBridge } from "@/components/native-bridge";
@@ -83,7 +84,7 @@ export default function RootLayout({
       <body
         suppressHydrationWarning
         className="min-h-full flex flex-col bg-[#F8FAFC] text-[#0F172A] font-sans selection:bg-[#1E3A8A] selection:text-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
-      >
+      >{process.env.NODE_ENV === 'development' ? <ReticleDev /> : null}
         <NativeBridge />
         {children}
       </body>

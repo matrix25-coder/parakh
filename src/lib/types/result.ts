@@ -63,4 +63,9 @@ export interface ComplianceReport {
   results: RuleEvaluationDetail[];
   violations: ViolationDetail[];
   font_audits?: FontReadabilityAudit[];
+  usp_audit?: any;
+  gs1_verification?: any;
+  fssai_verification?: any;
+  forensic_manifest?: any;
 }
+

@@ -32,40 +32,48 @@ export function auditFontHeights(data: StructuredProductData): FontReadabilityAu
     tableRuleText = 'Rule 9, Table I (Net qty > 1kg req min 6.0mm)';
   }
 
+  const measured = data.fontCalibration?.measuredHeights || {};
+
+  const getStatus = (detected: number | null, required: number): 'PASS' | 'FAIL' | 'REVIEW' => {
+    if (detected === null || detected === undefined) return 'REVIEW';
+    return detected >= required ? 'PASS' : 'FAIL';
+  };
+
   const audits: FontReadabilityAudit[] = [
     {
       field: 'mrp',
       label: 'MRP Numeral Height',
-      detected_height_mm: null,
+      detected_height_mm: measured['mrp'] ?? null,
       required_height_mm: 2.0,
-      status: 'REVIEW',
-      standard_rule: 'Rule 9(1) (Min 2.0mm; physical optical gauge verification required)',
+      status: getStatus(measured['mrp'] ?? null, 2.0),
+      standard_rule: 'Rule 9(1) (Min 2.0mm; calibrated via AR optical gauge)',
     },
     {
       field: 'net_quantity',
       label: 'Net Quantity Numeral Height',
-      detected_height_mm: null,
+      detected_height_mm: measured['net_quantity'] ?? null,
       required_height_mm: requiredNumeralHeightMm,
-      status: 'REVIEW',
+      status: getStatus(measured['net_quantity'] ?? null, requiredNumeralHeightMm),
       standard_rule: tableRuleText,
     },
     {
       field: 'manufacturer_name',
       label: 'Packer Address Font Height',
-      detected_height_mm: null,
+      detected_height_mm: measured['manufacturer_name'] ?? null,
       required_height_mm: 1.5,
-      status: 'REVIEW',
-      standard_rule: 'Rule 9(1) (Min 1.5mm for mandatory declarations; gauge verification required)',
+      status: getStatus(measured['manufacturer_name'] ?? null, 1.5),
+      standard_rule: 'Rule 9(1) (Min 1.5mm for mandatory declarations)',
     },
     {
       field: 'consumer_care',
       label: 'Consumer Care Readability',
-      detected_height_mm: null,
+      detected_height_mm: measured['consumer_care'] ?? null,
       required_height_mm: 1.5,
-      status: 'REVIEW',
+      status: getStatus(measured['consumer_care'] ?? null, 1.5),
       standard_rule: 'Rule 9(1) & Optical Contrast Ratio Guard',
     },
   ];
 
   return audits;
 }
+

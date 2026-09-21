@@ -38,6 +38,9 @@ export default function ScanProductPage() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanProgressStage, setScanProgressStage] = useState<string>('');
   const [isNative, setIsNative] = useState(false);
+  const [establishmentName, setEstablishmentName] = useState('Central Retail Store');
+  const [establishmentAddress, setEstablishmentAddress] = useState('Connaught Place, New Delhi');
+  const [geoCoords, setGeoCoords] = useState<{ latitude: number; longitude: number; altitude?: number; accuracy?: number } | null>(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -46,8 +49,24 @@ export default function ScanProductPage() {
           setIsNative(Capacitor.isNativePlatform());
         })
         .catch(() => {});
+
+      if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            setGeoCoords({
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+              altitude: pos.coords.altitude || undefined,
+              accuracy: pos.coords.accuracy || undefined,
+            });
+          },
+          () => {},
+          { timeout: 6000, enableHighAccuracy: true }
+        );
+      }
     }
   }, []);
+
 
   // Initialize camera when camera tab is active
   useEffect(() => {
@@ -315,8 +334,15 @@ export default function ScanProductPage() {
           category,
           isImported,
           countryOfOrigin,
+          latitude: geoCoords?.latitude,
+          longitude: geoCoords?.longitude,
+          altitude: geoCoords?.altitude,
+          accuracy: geoCoords?.accuracy,
+          establishmentName,
+          establishmentAddress,
         }),
       });
+
 
       const resText = await res.text();
       let data: any = {};

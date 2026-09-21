@@ -4,6 +4,10 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { StatusBadge, SeverityBadge, FontAuditCard } from '@/components/ui';
+import { ForensicBadge } from '@/components/ui/forensic-badge';
+import { UspAuditCard } from '@/components/ui/usp-audit-card';
+import { StatutoryNoticeModal } from '@/components/legal/statutory-notice-modal';
+import { OpticalGaugeModal } from '@/components/ui/optical-gauge-modal';
 import { getScanFromClient, saveScanToClient } from '@/lib/client-scan-cache';
 import { getApiUrl } from '@/lib/api-config';
 import type { ComplianceReport, FontReadabilityAudit } from '@/lib/types';
@@ -17,6 +21,12 @@ export default function ComplianceReportPage() {
   const [fontAudits, setFontAudits] = useState<FontReadabilityAudit[]>([]);
   const [inspectorName, setInspectorName] = useState('Field Inspection Officer');
   const [scanDate, setScanDate] = useState('2026-09-04 17:35 IST');
+  const [imagePath, setImagePath] = useState<string>('');
+  const [manifest, setManifest] = useState<any>(null);
+  const [extractedData, setExtractedData] = useState<any>(null);
+  const [showNoticeModal, setShowNoticeModal] = useState(false);
+  const [showOpticalGauge, setShowOpticalGauge] = useState(false);
+  const [fieldToMeasure, setFieldToMeasure] = useState('net_quantity');
 
   const applyReportData = (data: any) => {
     if (data.complianceResult) {
@@ -31,7 +41,35 @@ export default function ComplianceReportPage() {
     if (data.created_at) {
       setScanDate(new Date(data.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST');
     }
+    if (data.image_path || data.imagePath) {
+      setImagePath(data.image_path || data.imagePath);
+    }
+    const man = data.complianceResult?.forensic_manifest || data.forensicManifest || data.forensic_manifest;
+    if (man) {
+      setManifest(man);
+    }
+    const ext = data.extractedData || data.extracted_data;
+    if (ext) {
+      setExtractedData(typeof ext === 'string' ? JSON.parse(ext) : ext);
+    }
   };
+
+  const handleSaveMeasurement = (field: string, measuredMm: number) => {
+    setFontAudits((prev) =>
+      prev.map((audit) => {
+        if (audit.field === field) {
+          const pass = measuredMm >= audit.required_height_mm;
+          return {
+            ...audit,
+            detected_height_mm: measuredMm,
+            status: pass ? 'PASS' : 'FAIL',
+          };
+        }
+        return audit;
+      })
+    );
+  };
+
 
   useEffect(() => {
     let isMounted = true;
@@ -151,7 +189,19 @@ export default function ComplianceReportPage() {
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setShowOpticalGauge(true)}
+            className="px-3 py-2 font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 transition-colors cursor-pointer flex items-center gap-1.5"
+          >
+            <span>📐 AR Optical Gauge</span>
+          </button>
+          <button
+            onClick={() => setShowNoticeModal(true)}
+            className="px-3 py-2 font-bold text-white bg-blue-700 hover:bg-blue-600 border border-blue-800 transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+          >
+            <span>⚖️ Issue Form V Notice</span>
+          </button>
           <button
             onClick={handleExportJson}
             className="px-3 py-2 font-semibold text-[#0F172A] bg-white hover:bg-[#F8FAFC] border border-[#CBD5E1] transition-colors cursor-pointer"
@@ -167,7 +217,7 @@ export default function ComplianceReportPage() {
               <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
               <rect x="6" y="14" width="12" height="8" />
             </svg>
-            <span>Print Certificate</span>
+            <span>Print</span>
           </button>
           <button
             onClick={handleDownloadPdf}
@@ -177,6 +227,18 @@ export default function ComplianceReportPage() {
           </button>
         </div>
       </div>
+
+      {/* Cryptographic Chain of Custody Badge (Section 63 BSA / 65B IEA) */}
+      <div className="no-print">
+        <ForensicBadge
+          verificationCode={manifest?.verificationCode || `PRK-EVI-${id.slice(0, 8).toUpperCase()}-2026`}
+          sha256Hash={manifest?.rawImageSha256}
+          coordinates={manifest?.telemetry?.coordinates}
+          timestamp={manifest?.telemetry?.istTimestamp || scanDate}
+          inspectorName={inspectorName}
+        />
+      </div>
+
 
       {/* Official Printable Certificate Document */}
       <div className="bg-white border border-[#CBD5E1] p-8 md:p-12 space-y-8 print:border-none print:p-0 shadow-sm">
@@ -296,11 +358,36 @@ export default function ComplianceReportPage() {
           </div>
         </div>
 
+        {/* 5. Mandatory Unit Sale Price (USP) Compliance */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between font-mono">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[#0A2540]">
+              5. Mandatory Unit Sale Price (Rule 6(11) Shrinkflation Audit)
+            </h3>
+          </div>
+          <UspAuditCard
+            uspResult={report.usp_audit}
+            netQuantityRaw={extractedData?.netQuantity?.raw}
+            mrpRaw={extractedData?.mrp?.raw}
+          />
+        </div>
+
         {/* 6. Font & Readability Analysis */}
         <div className="space-y-3">
-          <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-[#0A2540]">
-            6. Font & Readability Analysis (Rule 9 Table I)
-          </h3>
+          <div className="flex items-center justify-between font-mono">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[#0A2540]">
+              6. Font & Readability Analysis (Rule 9 Table I)
+            </h3>
+            <button
+              onClick={() => {
+                setFieldToMeasure('net_quantity');
+                setShowOpticalGauge(true);
+              }}
+              className="text-xs text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-2 py-1 font-bold flex items-center gap-1 cursor-pointer"
+            >
+              <span>📐 Calibrate via AR Gauge</span>
+            </button>
+          </div>
           <FontAuditCard audits={fontAudits} />
         </div>
 
@@ -372,6 +459,27 @@ export default function ComplianceReportPage() {
           </div>
         </div>
       </div>
+
+      {/* Form V Statutory Notice Generator Modal */}
+      <StatutoryNoticeModal
+        isOpen={showNoticeModal}
+        onClose={() => setShowNoticeModal(false)}
+        report={report}
+        establishmentName="M/s Retail Supermarket & General Store"
+        inspectorName={inspectorName}
+        manifest={manifest}
+      />
+
+      {/* AR Optical Calibration Gauge Modal */}
+      <OpticalGaugeModal
+        isOpen={showOpticalGauge}
+        onClose={() => setShowOpticalGauge(false)}
+        imageUrl={imagePath || '/logo.png'}
+        fieldToMeasure={fieldToMeasure}
+        requiredHeightMm={2.0}
+        onSaveMeasurement={handleSaveMeasurement}
+      />
     </div>
+
   );
 }
