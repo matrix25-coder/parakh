@@ -435,7 +435,7 @@ function assignDefaultBoundingBoxes(
   }
 }
 
-function parseUsp(text: string): { raw: string | null; value: number | null; unit: string | null } {
+export function parseUsp(text: string): { raw: string | null; value: number | null; unit: string | null } {
   // Pattern 1: Explicit USP prefix: "USP: Rs. 0.77 / ml", "Unit Sale Price: ₹0.77 per ml", "USP: Rs. 0.77/ml", etc.
   const uspRegex = /(?:u\.?s\.?p\.?|unit\s*sale\s*price)[\s:.]*(?:rs\.?|inr|₹)?\s*([0-9]+(?:\.[0-9]{1,2})?)\s*(?:\/|\s*per\s*)\s*([0-9]*\s*[a-zA-Z]+)/i;
   const match = text.match(uspRegex);
@@ -468,7 +468,7 @@ function parseUsp(text: string): { raw: string | null; value: number | null; uni
   return { raw: null, value: null, unit: null };
 }
 
-function parseFssai(text: string): { licenseNumber: string | null; raw: string | null } {
+export function parseFssai(text: string): { licenseNumber: string | null; raw: string | null } {
   // FSSAI license is 14 digits, typically starting with 1 or 2
   const fssaiRegex = /(?:fssai|lic(?:\.|\s*no)?)\s*[:.-]?\s*([1-2]\d{13})\b/i;
   const match = text.match(fssaiRegex);
@@ -490,7 +490,7 @@ function parseFssai(text: string): { licenseNumber: string | null; raw: string |
   return { licenseNumber: null, raw: null };
 }
 
-function parseBarcode(text: string): { gtin: string | null; format: string | null } {
+export function parseBarcode(text: string): { gtin: string | null; format: string | null } {
   const barcodes = extractBarcodesFromOcrText(text);
   const primary = barcodes.find((b) => b.format === 'EAN_13' || b.format === 'UPC_A');
   if (primary) {

@@ -1,5 +1,6 @@
 import sharp from 'sharp';
 import type { StructuredProductData } from './types';
+import { parseUsp, parseFssai, parseBarcode } from './field-parser';
 
 /**
  * Extract structured Legal Metrology declarations using Google Gemini Multimodal Vision API
@@ -367,6 +368,20 @@ Return ONLY valid raw JSON, with no markdown code blocks or commentary.`;
   if (!parsed.fieldConfidences.month_year) parsed.fieldConfidences.month_year = parsed.manufacturingDate.formatted ? 0.93 : 0;
   if (!parsed.fieldConfidences.consumer_care) parsed.fieldConfidences.consumer_care = (parsed.consumerCare.phone || parsed.consumerCare.email) ? 0.92 : (parsed.consumerCare.raw ? 0.75 : 0);
   if (!parsed.fieldConfidences.country_of_origin) parsed.fieldConfidences.country_of_origin = parsed.countryOfOrigin ? 0.98 : 0;
+
+  // 9. USP, FSSAI & Barcode normalization from allOcr / rawOcrText
+  if (!parsed.usp || !parsed.usp.value) {
+    const extractedUsp = parseUsp(allOcr);
+    if (extractedUsp.raw) parsed.usp = extractedUsp;
+  }
+  if (!parsed.fssaiLicense || !parsed.fssaiLicense.licenseNumber) {
+    const extractedFssai = parseFssai(allOcr);
+    if (extractedFssai.licenseNumber) parsed.fssaiLicense = extractedFssai;
+  }
+  if (!parsed.barcode || !parsed.barcode.gtin) {
+    const extractedBarcode = parseBarcode(allOcr);
+    if (extractedBarcode.gtin) parsed.barcode = extractedBarcode;
+  }
 
   return parsed;
 }
