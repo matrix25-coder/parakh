@@ -14,9 +14,10 @@ export async function runGeminiVisionExtraction(
     countryOfOrigin?: string;
   }
 ): Promise<StructuredProductData> {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.AI_API_KEY || process.env.GOOGLE_API_KEY;
+  const rawKey = process.env.GEMINI_API_KEY || process.env.AI_API_KEY || process.env.GOOGLE_API_KEY || '';
+  const apiKey = rawKey.trim().replace(/^["']|["']$/g, '');
   if (!apiKey) {
-    throw new Error('GEMINI_API_KEY not configured.');
+    throw new Error('GEMINI_API_KEY environment variable is missing.');
   }
 
   // Optimize image buffer: resize if larger than 1200px to ensure lightning-fast upload & vision processing
@@ -127,10 +128,8 @@ Return ONLY valid raw JSON, with no markdown code blocks or commentary.`;
     'gemini-flash-latest',
   ];
 
-  // On Vercel serverless (Hobby = 60 s max function duration) use a tight
-  // per-model deadline so we never exhaust the whole budget on one hung model.
-  const isServerless = !!(process.env.VERCEL || process.env.VERCEL_ENV);
-  const MODEL_TIMEOUT_MS = isServerless ? 12_000 : 25_000;
+  // Allow 25 seconds per model to comfortably accommodate full image base64 upload and inference
+  const MODEL_TIMEOUT_MS = 25_000;
 
   let lastError: Error | null = null;
   let textOutput: string | null = null;

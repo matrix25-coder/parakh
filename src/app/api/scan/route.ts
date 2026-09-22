@@ -195,6 +195,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. OCR & Structured Extraction across submitted faces IN PARALLEL
+    let lastExtractionError = '';
     const extractionResults = await Promise.all(
       savedFaces.map(async (faceItem) => {
         try {
@@ -207,35 +208,26 @@ export async function POST(req: NextRequest) {
               countryOfOrigin,
             },
           });
-        } catch (err) {
-          console.warn(`Extraction error on face ${faceItem.face}:`, err);
+        } catch (err: any) {
+          console.error(`Extraction error on face ${faceItem.face}:`, err);
+          lastExtractionError = err?.message || String(err);
           return null;
         }
       })
     );
 
+    const successfulResults = extractionResults.filter((r): r is NonNullable<typeof r> => r !== null);
+    if (successfulResults.length === 0) {
+      return NextResponse.json(
+        {
+          error: lastExtractionError || 'Could not extract declarations from the submitted package image. Please verify lighting and try again.',
+        },
+        { status: 422 }
+      );
+    }
+
     const primaryFace = savedFaces[0];
-    const extractedData = extractionResults[0] || {
-      productName: productName || null,
-      brand: null,
-      commodityName: null,
-      manufacturer: null,
-      packer: null,
-      importer: null,
-      address: null,
-      pincode: null,
-      mrp: { value: null, currency: 'INR', raw: null, hasInclusiveOfAllTaxes: false },
-      netQuantity: { value: null, unit: null, raw: null, isStandardUnit: false },
-      manufacturingDate: { month: null, year: null, raw: null, formatted: null, isCompliantFormat: false },
-      expiryDate: { raw: null, expiryFormatted: null },
-      consumerCare: { phone: null, email: null, address: null, raw: null },
-      countryOfOrigin: countryOfOrigin || 'India',
-      isImported: isImported || false,
-      rawOcrText: '',
-      fieldConfidences: {},
-      boundingBoxes: {},
-      pdpAreaCm2: 180,
-    };
+    const extractedData = extractionResults[0] || successfulResults[0];
 
     // Tag primary bounding boxes with primary face
     Object.keys(extractedData.boundingBoxes || {}).forEach((k) => {

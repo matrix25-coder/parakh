@@ -21,40 +21,39 @@ export async function extractProductData(
   imageBuffer: Buffer,
   options?: ExtractionOptions
 ): Promise<StructuredProductData> {
-  const hasGeminiKey = !!(
+  const apiKey = (
     process.env.GEMINI_API_KEY ||
     process.env.AI_API_KEY ||
-    process.env.GOOGLE_API_KEY
-  );
+    process.env.GOOGLE_API_KEY ||
+    ''
+  ).trim();
 
   // 1. Try Gemini Multimodal Vision if key is available
-  if (hasGeminiKey) {
+  if (apiKey) {
     try {
       const data = await runGeminiVisionExtraction(
         imageBuffer,
         options?.mimeType || 'image/jpeg',
         options?.contextMetadata
       );
-      if (data && (data.rawOcrText || data.productName || data.mrp.raw || data.netQuantity.raw)) {
+      if (data) {
         return data;
       }
-    } catch (err) {
-      console.warn('Gemini vision extraction failed, falling back to local OCR engine:', err);
+    } catch (err: any) {
+      console.error('Gemini vision extraction failed:', err);
+      const isServerlessEnv = !!(process.env.VERCEL || process.env.VERCEL_ENV);
+      if (isServerlessEnv) {
+        throw new Error(`Gemini Vision Extraction failed: ${err.message || String(err)}`);
+      }
     }
-  }
-
-  // 2. Local OCR Engine — Tesseract.js + Statutory Regex Parsing
-  // On Vercel (and other serverless runtimes) Tesseract must download the
-  // ~5 MB eng.traineddata model at runtime on every cold start — this
-  // reliably causes 504 timeouts on the Hobby plan.  Skip it and surface a
-  // clear error so the user knows to set GEMINI_API_KEY.
-  const isServerlessEnv = !!(process.env.VERCEL || process.env.VERCEL_ENV);
-  if (isServerlessEnv) {
-    throw new Error(
-      'OCR extraction requires a GEMINI_API_KEY on Vercel deployments. ' +
-      'Local Tesseract OCR is not available in serverless environments. ' +
-      'Please set the GEMINI_API_KEY environment variable in your Vercel project settings.'
-    );
+  } else {
+    const isServerlessEnv = !!(process.env.VERCEL || process.env.VERCEL_ENV);
+    if (isServerlessEnv) {
+      throw new Error(
+        'GEMINI_API_KEY environment variable is missing in Vercel project settings. ' +
+        'Please add GEMINI_API_KEY under Settings > Environment Variables.'
+      );
+    }
   }
 
   try {
