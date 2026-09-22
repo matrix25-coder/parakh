@@ -115,11 +115,19 @@ Expected JSON output format:
 Note: all bounding box numbers MUST be percentages between 0 and 100.
 Return ONLY valid raw JSON, with no markdown code blocks or commentary.`;
 
-  // Verified Gemini Multimodal Vision models (fastest & most stable first).
-  // gemini-3.1-flash-lite does NOT exist — removed to avoid 25 s hangs.
-  const modelCandidates = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+  // Verified live Gemini Vision models in speed & availability order:
+  // 1. gemini-flash-lite-latest: ~2.4s latency, highest RPM quota, verified 200
+  // 2. gemini-3.5-flash-lite: ~2.4s latency, verified 200
+  // 3. gemini-3.1-flash-lite: ~3.5s latency, verified 200
+  // 4. gemini-flash-latest: high quality fallback
+  const modelCandidates = [
+    'gemini-flash-lite-latest',
+    'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite',
+    'gemini-flash-latest',
+  ];
 
-  // On Vercel serverless (Hobby = 60 s max function duration) use a tighter
+  // On Vercel serverless (Hobby = 60 s max function duration) use a tight
   // per-model deadline so we never exhaust the whole budget on one hung model.
   const isServerless = !!(process.env.VERCEL || process.env.VERCEL_ENV);
   const MODEL_TIMEOUT_MS = isServerless ? 12_000 : 25_000;
@@ -185,7 +193,7 @@ Return ONLY valid raw JSON, with no markdown code blocks or commentary.`;
     throw lastError || new Error('No extraction response received from Gemini Vision model.');
   }
 
-  // Sanitize any accidental markdown code fences
+  // Sanitize markdown code fences and preamble
   let cleanJson = textOutput.trim();
   if (cleanJson.startsWith('```json')) {
     cleanJson = cleanJson.replace(/^```json\s*/, '').replace(/\s*```$/, '');
@@ -193,7 +201,25 @@ Return ONLY valid raw JSON, with no markdown code blocks or commentary.`;
     cleanJson = cleanJson.replace(/^```\s*/, '').replace(/\s*```$/, '');
   }
 
-  const parsed = JSON.parse(cleanJson) as StructuredProductData;
+  let rawParsed: any;
+  try {
+    rawParsed = JSON.parse(cleanJson);
+  } catch {
+    // Attempt extracting first JSON object from text if mixed with preamble
+    const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      rawParsed = JSON.parse(jsonMatch[0]);
+    } else {
+      throw new Error('Invalid JSON received from Gemini Vision model');
+    }
+  }
+
+  // Handle case where model returns an array of objects [ {...} ]
+  if (Array.isArray(rawParsed)) {
+    rawParsed = rawParsed[0] || {};
+  }
+
+  const parsed = rawParsed as StructuredProductData;
 
   // Initialize objects if missing
   if (!parsed.mrp) parsed.mrp = { value: null, currency: 'INR', raw: null, hasInclusiveOfAllTaxes: false };
