@@ -17,7 +17,7 @@
 // NEXT_PUBLIC_API_BASE_URL=https://YOUR-PARAKH-BACKEND
 export const API_CONFIG = {
   // Configured with deployed PARAKH Vercel production server URL
-  baseUrl: (process.env.NEXT_PUBLIC_API_BASE_URL || 'https://parakh-matrix-9f70.vercel.app').trim().replace(/\/$/, ''),
+  baseUrl: (process.env.NEXT_PUBLIC_API_BASE_URL || 'https://parakh-five.vercel.app').trim().replace(/\/$/, ''),
   
   // Timeout for network inspection calls (60 seconds for multimodal OCR analysis)
   requestTimeoutMs: 60000,
