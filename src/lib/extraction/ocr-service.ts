@@ -43,7 +43,20 @@ export async function extractProductData(
     }
   }
 
-  // 2. Local OCR Engine (Tesseract.js + Statutory Regex Parsing)
+  // 2. Local OCR Engine — Tesseract.js + Statutory Regex Parsing
+  // On Vercel (and other serverless runtimes) Tesseract must download the
+  // ~5 MB eng.traineddata model at runtime on every cold start — this
+  // reliably causes 504 timeouts on the Hobby plan.  Skip it and surface a
+  // clear error so the user knows to set GEMINI_API_KEY.
+  const isServerlessEnv = !!(process.env.VERCEL || process.env.VERCEL_ENV);
+  if (isServerlessEnv) {
+    throw new Error(
+      'OCR extraction requires a GEMINI_API_KEY on Vercel deployments. ' +
+      'Local Tesseract OCR is not available in serverless environments. ' +
+      'Please set the GEMINI_API_KEY environment variable in your Vercel project settings.'
+    );
+  }
+
   try {
     const localResult = await runLocalOcr(imageBuffer);
 

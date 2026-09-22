@@ -115,8 +115,15 @@ Expected JSON output format:
 Note: all bounding box numbers MUST be percentages between 0 and 100.
 Return ONLY valid raw JSON, with no markdown code blocks or commentary.`;
 
-  // Supported Gemini Multimodal Vision Models in priority order (fastest & most stable first)
-  const modelCandidates = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-3.1-flash-lite'];
+  // Verified Gemini Multimodal Vision models (fastest & most stable first).
+  // gemini-3.1-flash-lite does NOT exist — removed to avoid 25 s hangs.
+  const modelCandidates = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+
+  // On Vercel serverless (Hobby = 60 s max function duration) use a tighter
+  // per-model deadline so we never exhaust the whole budget on one hung model.
+  const isServerless = !!(process.env.VERCEL || process.env.VERCEL_ENV);
+  const MODEL_TIMEOUT_MS = isServerless ? 12_000 : 25_000;
+
   let lastError: Error | null = null;
   let textOutput: string | null = null;
 
@@ -145,7 +152,7 @@ Return ONLY valid raw JSON, with no markdown code blocks or commentary.`;
       };
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 25000);
+      const timeoutId = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS);
 
       const response = await fetch(endpoint, {
         method: 'POST',
