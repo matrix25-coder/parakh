@@ -38,13 +38,13 @@ async function auditSingleImage(imagePath: string, testTesseract = true): Promis
 
   // 2. Image Preprocessing (Sharp)
   const tPreprocessStart = performance.now();
-  let processedBuffer = rawBuffer;
+  let processedBuffer: Buffer = rawBuffer as unknown as Buffer;
   const meta = await sharp(rawBuffer).metadata();
   if ((meta.width && meta.width > 1200) || (meta.height && meta.height > 1200) || rawBuffer.length > 300 * 1024) {
-    processedBuffer = await sharp(rawBuffer)
+    processedBuffer = (await sharp(rawBuffer)
       .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
       .jpeg({ quality: 80 })
-      .toBuffer();
+      .toBuffer()) as unknown as Buffer;
   }
   const imagePreprocessMs = performance.now() - tPreprocessStart;
 

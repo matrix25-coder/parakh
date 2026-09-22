@@ -70,10 +70,13 @@ async function runAllTests() {
     Manufactured by: Amrit Dairy Products Pvt Ltd, Plot 42, GIDC Anand, Gujarat - 388001
     Net Quantity: 500 ml
     MRP: Rs. 385.00 (inclusive of all taxes)
+    USP: Rs. 0.77 / ml
     PKD: 07/2026
     Best Before: 9 Months from date of packaging
     Consumer Care: 1800-222-0199 | care@amritdairy.in
     Country of Origin: India
+    FSSAI Lic. No. 12423001000123
+    Barcode: 8901234567890
   `;
   const gheeParsed = parseRawOcrText(sampleGheeText, {}, {}, { category: 'FOOD', isImported: false });
   assert.strictEqual(gheeParsed.mrp.value, 385.0);
@@ -83,7 +86,10 @@ async function runAllTests() {
   assert.strictEqual(gheeParsed.netQuantity.isStandardUnit, true);
   assert.strictEqual(gheeParsed.pincode, '388001');
   assert.strictEqual(gheeParsed.manufacturingDate.formatted, '07/2026');
-  console.log('  ✓ Product A parsed: MRP ₹385 (taxes incl), 500ml (standard SI), Mfg 07/2026.\n');
+  assert.strictEqual(gheeParsed.usp.value, 0.77);
+  assert.strictEqual(gheeParsed.fssaiLicense.licenseNumber, '12423001000123');
+  assert.strictEqual(gheeParsed.barcode.gtin, '8901234567890');
+  console.log('  ✓ Product A parsed: MRP ₹385 (taxes incl), 500ml (standard SI), USP ₹0.77/ml, FSSAI & GS1 verified, Mfg 07/2026.\n');
 
   // TEST 5: OCR Text Parsing on Product 2 (Non-compliant Biscuits with 'gms' & missing MRP tax phrase)
   console.log('[TEST 5] Testing Statutory Field Parsing on Product B (Biscuits with Violations)...');

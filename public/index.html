@@ -178,13 +178,13 @@
 
     <div class="input-group">
       <label for="server-url">PARAKH Backend Server Address:</label>
-      <input type="text" id="server-url" placeholder="http://10.88.77.11:3000" />
+      <input type="text" id="server-url" placeholder="https://parakh-three.vercel.app" />
     </div>
 
     <button class="btn" id="connect-btn" onclick="connectToServer()">Connect & Launch &rarr;</button>
 
     <div class="tip">
-      <strong>Wi-Fi Setup Note:</strong> Make sure your phone and computer are on the same Wi-Fi network and <code>npm run dev</code> is running on your computer.
+      <strong>Network Configuration:</strong> Connects to the cloud server by default. For local development, enter your local Wi-Fi IP (e.g. <code>http://192.168.1.X:3000</code>).
     </div>
 
     <div class="footer">
@@ -194,13 +194,13 @@
   </div>
 
   <script>
-    const DEFAULT_DEV_URL = 'http://10.88.77.11:3000';
+    const DEFAULT_PROD_URL = 'https://parakh-three.vercel.app';
     const input = document.getElementById('server-url');
     const msg = document.getElementById('status-msg');
     const spinner = document.getElementById('spinner');
 
-    // Retrieve saved URL or default to local development host
-    const savedUrl = localStorage.getItem('parakh_backend_url') || DEFAULT_DEV_URL;
+    // Retrieve saved URL or default to production host
+    const savedUrl = localStorage.getItem('parakh_backend_url') || DEFAULT_PROD_URL;
     input.value = savedUrl;
 
     // Fast auto-connect test on launch

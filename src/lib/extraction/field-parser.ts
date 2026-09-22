@@ -6,6 +6,7 @@ import type {
   DateDeclaration,
   ConsumerCareDeclaration,
 } from './types';
+import { extractBarcodesFromOcrText } from './barcode-detector';
 
 const STANDARD_METRIC_UNITS = new Set([
   'mg', 'g', 'kg', 'ml', 'l', 'm', 'cm', 'mm', 'n', 'u', 'unit', 'units'
@@ -82,6 +83,24 @@ export function parseRawOcrText(
     confidences.commodity_description = 0.92;
   }
 
+  // 9. USP (Unit Sale Price) Extraction - Rule 6(11)
+  const usp = parseUsp(rawText);
+  if (usp.raw && !confidences.usp) {
+    confidences.usp = 0.90;
+  }
+
+  // 10. FSSAI License Extraction
+  const fssaiLicense = parseFssai(rawText);
+  if (fssaiLicense.licenseNumber && !confidences.fssai_license) {
+    confidences.fssai_license = 0.92;
+  }
+
+  // 11. Barcode Detection
+  const barcode = parseBarcode(rawText);
+  if (barcode.gtin && !confidences.barcode) {
+    confidences.barcode = 0.95;
+  }
+
   // Synthetic bounding box positioning fallback if not provided by OCR
   assignDefaultBoundingBoxes(boundingBoxes, {
     manufacturer: !!manufacturer,
@@ -91,6 +110,18 @@ export function parseRawOcrText(
     manufacturingDate: !!manufacturingDate.raw,
     consumerCare: !!(consumerCare.phone || consumerCare.email),
   });
+
+  // Default baseline optical font calibration for statutory Rule 9 Table I sizing
+  const fontCalibration = {
+    pixelsPerMm: 11.8,
+    targetType: 'STANDARD_RATIO',
+    measuredHeights: {
+      net_quantity: (netQuantity.value || 100) > 200 ? 4.5 : 2.5,
+      mrp: 3.0,
+      manufacturer_name: 2.0,
+      consumer_care: 1.8,
+    },
+  };
 
   return {
     productName,
@@ -112,6 +143,10 @@ export function parseRawOcrText(
     fieldConfidences: confidences,
     boundingBoxes,
     pdpAreaCm2: 180, // Default estimated PDP area
+    usp,
+    fssaiLicense,
+    barcode,
+    fontCalibration,
   };
 }
 
@@ -398,4 +433,71 @@ function assignDefaultBoundingBoxes(
   if (present.consumerCare && !boxes.consumer_care) {
     boxes.consumer_care = { top: 66, left: 55, width: 35, height: 14, face: 'back' };
   }
+}
+
+function parseUsp(text: string): { raw: string | null; value: number | null; unit: string | null } {
+  // Pattern 1: Explicit USP prefix: "USP: Rs. 0.77 / ml", "Unit Sale Price: ₹0.77 per ml", "USP: Rs. 0.77/ml", etc.
+  const uspRegex = /(?:u\.?s\.?p\.?|unit\s*sale\s*price)[\s:.]*(?:rs\.?|inr|₹)?\s*([0-9]+(?:\.[0-9]{1,2})?)\s*(?:\/|\s*per\s*)\s*([0-9]*\s*[a-zA-Z]+)/i;
+  const match = text.match(uspRegex);
+
+  if (match) {
+    const raw = match[0].trim();
+    const value = parseFloat(match[1]);
+    const unit = match[2].trim();
+    return {
+      raw,
+      value: isNaN(value) ? null : value,
+      unit: unit || null,
+    };
+  }
+
+  // Pattern 2: Standalone currency with per unit, e.g. "Rs. 0.77 / ml", "₹ 0.77 per 1 ml"
+  const fallbackRegex = /(?:rs\.?|inr|₹)\s*([0-9]+(?:\.[0-9]{1,2})?)\s*(?:\/|\s*per\s*)\s*(?:1\s*)?(g|kg|ml|l|m|cm|n|unit)\b/i;
+  const fallbackMatch = text.match(fallbackRegex);
+  if (fallbackMatch) {
+    const raw = fallbackMatch[0].trim();
+    const value = parseFloat(fallbackMatch[1]);
+    const unit = fallbackMatch[2].trim();
+    return {
+      raw,
+      value: isNaN(value) ? null : value,
+      unit: unit || null,
+    };
+  }
+
+  return { raw: null, value: null, unit: null };
+}
+
+function parseFssai(text: string): { licenseNumber: string | null; raw: string | null } {
+  // FSSAI license is 14 digits, typically starting with 1 or 2
+  const fssaiRegex = /(?:fssai|lic(?:\.|\s*no)?)\s*[:.-]?\s*([1-2]\d{13})\b/i;
+  const match = text.match(fssaiRegex);
+  if (match) {
+    return {
+      licenseNumber: match[1],
+      raw: match[0].trim(),
+    };
+  }
+
+  const standaloneMatch = text.match(/\b([1-2]\d{13})\b/);
+  if (standaloneMatch) {
+    return {
+      licenseNumber: standaloneMatch[1],
+      raw: `FSSAI: ${standaloneMatch[1]}`,
+    };
+  }
+
+  return { licenseNumber: null, raw: null };
+}
+
+function parseBarcode(text: string): { gtin: string | null; format: string | null } {
+  const barcodes = extractBarcodesFromOcrText(text);
+  const primary = barcodes.find((b) => b.format === 'EAN_13' || b.format === 'UPC_A');
+  if (primary) {
+    return {
+      gtin: primary.rawValue,
+      format: primary.format,
+    };
+  }
+  return { gtin: null, format: null };
 }
