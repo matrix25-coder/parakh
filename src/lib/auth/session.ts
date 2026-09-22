@@ -3,14 +3,21 @@ import { cookies } from 'next/headers';
 import { getUserById, type UserRecord } from '@/lib/db';
 
 const SESSION_COOKIE_NAME = 'parakh_session';
-const SESSION_SECRET =
-  process.env.AUTH_SECRET ||
-  (process.env.NODE_ENV === 'production'
-    ? (() => {
-        throw new Error('AUTH_SECRET environment variable is required in production.');
-      })()
-    : 'parakh-dev-local-session-secret');
 const MAX_AGE_SECONDS = 7 * 24 * 60 * 60; // 7 days
+
+/**
+ * Returns the session signing secret.
+ * Evaluated lazily (at request time) so `next build` never triggers the
+ * production guard — which fires only when the app actually handles a request.
+ */
+function getSessionSecret(): string {
+  const secret = process.env.AUTH_SECRET;
+  if (secret) return secret;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('AUTH_SECRET environment variable is required in production.');
+  }
+  return 'parakh-dev-local-session-secret';
+}
 
 export interface SessionPayload {
   userId: string;
@@ -23,7 +30,7 @@ export interface SessionPayload {
 export function createSessionToken(userId: string): string {
   const payload = JSON.stringify({ userId, createdAt: Date.now() });
   const payloadB64 = Buffer.from(payload).toString('base64url');
-  const hmac = crypto.createHmac('sha256', SESSION_SECRET);
+  const hmac = crypto.createHmac('sha256', getSessionSecret());
   hmac.update(payloadB64);
   const signature = hmac.digest('base64url');
   return `${payloadB64}.${signature}`;
@@ -37,7 +44,7 @@ export function verifySessionToken(token: string): string | null {
     const [payloadB64, signature] = token.split('.');
     if (!payloadB64 || !signature) return null;
 
-    const hmac = crypto.createHmac('sha256', SESSION_SECRET);
+    const hmac = crypto.createHmac('sha256', getSessionSecret());
     hmac.update(payloadB64);
     const expectedSignature = hmac.digest('base64url');
 
