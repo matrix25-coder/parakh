@@ -4,6 +4,9 @@ import { evaluateCompliance } from '@/lib/rule-engine';
 import { getAuthUserFromRequest } from '@/lib/auth/middleware-utils';
 import type { StructuredProductData } from '@/lib/extraction/types';
 
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
+
 export async function PUT(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }
