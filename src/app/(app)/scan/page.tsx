@@ -313,7 +313,7 @@ export default function ScanProductPage() {
     startCamera(undefined, res);
   };
 
-  const optimizeImageForInspection = (dataUrl: string, maxDimension = 1200, quality = 0.75): Promise<string> => {
+  const optimizeImageForInspection = (dataUrl: string, maxDimension = 1080, quality = 0.75): Promise<string> => {
     return new Promise((resolve) => {
       if (typeof window === 'undefined') {
         resolve(dataUrl);
@@ -323,7 +323,7 @@ export default function ScanProductPage() {
       img.onload = () => {
         let width = img.width;
         let height = img.height;
-        if (width <= maxDimension && height <= maxDimension && dataUrl.length < 150 * 1024) {
+        if (width <= maxDimension && height <= maxDimension && dataUrl.length < 120 * 1024) {
           resolve(dataUrl);
           return;
         }
@@ -401,13 +401,13 @@ export default function ScanProductPage() {
       const canvas = canvasRef.current;
       let w = video.videoWidth || 640;
       let h = video.videoHeight || 480;
-      if (w > 1400 || h > 1400) {
+      if (w > 1080 || h > 1080) {
         if (w > h) {
-          h = Math.round((h * 1400) / w);
-          w = 1400;
+          h = Math.round((h * 1080) / w);
+          w = 1080;
         } else {
-          w = Math.round((w * 1400) / h);
-          h = 1400;
+          w = Math.round((w * 1080) / h);
+          h = 1080;
         }
       }
       canvas.width = w;
@@ -415,7 +415,7 @@ export default function ScanProductPage() {
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(video, 0, 0, w, h);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.80);
         setCapturedSnapshot(dataUrl);
       }
     }

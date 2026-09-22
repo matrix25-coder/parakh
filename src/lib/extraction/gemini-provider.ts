@@ -21,16 +21,16 @@ export async function runGeminiVisionExtraction(
     throw new Error('GEMINI_API_KEY environment variable is missing.');
   }
 
-  // Optimize image buffer: resize if larger than 1200px to ensure lightning-fast upload & vision processing
+  // Optimize image buffer: resize to max 1024px at quality 78 for instantaneous upload and fast inference
   let processedBuffer = imageBuffer;
   let processedMimeType = mimeType || 'image/jpeg';
 
   try {
     const meta = await sharp(imageBuffer).metadata();
-    if ((meta.width && meta.width > 1200) || (meta.height && meta.height > 1200) || imageBuffer.length > 300 * 1024) {
+    if ((meta.width && meta.width > 1024) || (meta.height && meta.height > 1024) || imageBuffer.length > 120 * 1024) {
       processedBuffer = await sharp(imageBuffer)
-        .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: 80 })
+        .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 78 })
         .toBuffer();
       processedMimeType = 'image/jpeg';
     }
@@ -117,80 +117,116 @@ Expected JSON output format:
 Note: all bounding box numbers MUST be percentages between 0 and 100.
 Return ONLY valid raw JSON, with no markdown code blocks or commentary.`;
 
-  // Verified live Gemini Vision models in speed & availability order:
-  // 1. gemini-flash-lite-latest: ~2.4s latency, highest RPM quota, verified 200
-  // 2. gemini-3.5-flash-lite: ~2.4s latency, verified 200
-  // 3. gemini-3.1-flash-lite: ~3.5s latency, verified 200
-  // 4. gemini-flash-latest: high quality fallback
-  const modelCandidates = [
+  // Verified fast Gemini models
+  const models = [
     'gemini-flash-lite-latest',
     'gemini-3.5-flash-lite',
     'gemini-3.1-flash-lite',
-    'gemini-flash-latest',
   ];
 
-  // Allow 25 seconds per model to comfortably accommodate full image base64 upload and inference
-  const MODEL_TIMEOUT_MS = 25_000;
-
-  let lastError: Error | null = null;
-  let textOutput: string | null = null;
-
-  for (const model of modelCandidates) {
-    try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      const requestBody = {
-        contents: [
-          {
-            parts: [
-              { text: systemPrompt },
-              {
-                inlineData: {
-                  mimeType: processedMimeType,
-                  data: base64Image,
-                },
+  const fetchSingleModel = async (model: string, signal: AbortSignal): Promise<string> => {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const requestBody = {
+      contents: [
+        {
+          parts: [
+            { text: systemPrompt },
+            {
+              inlineData: {
+                mimeType: processedMimeType,
+                data: base64Image,
               },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.1,
-          maxOutputTokens: 2048,
-          responseMimeType: 'application/json',
+            },
+          ],
         },
-      };
+      ],
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 2048,
+        responseMimeType: 'application/json',
+      },
+    };
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS);
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+      signal,
+    });
 
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-        signal: controller.signal,
-      });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Model ${model} error (${response.status}): ${errorText}`);
+    }
 
-      clearTimeout(timeoutId);
+    const result = await response.json();
+    const output = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!output) {
+      throw new Error(`Model ${model} returned empty content`);
+    }
+    return output;
+  };
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        // If model retired/not found or temporary capacity spike, immediately try next candidate
-        if (response.status === 404 || response.status === 429 || response.status === 503 || errorText.includes('demand')) {
-          lastError = new Error(`Model ${model} busy/unavailable: ${errorText}`);
-          continue;
-        }
-        throw new Error(`Gemini Vision API error (${response.status}): ${errorText}`);
+  let textOutput: string | null = null;
+  const ctrl1 = new AbortController();
+  const ctrl2 = new AbortController();
+  let candidate2Started = false;
+  let candidate2Promise: Promise<string> | null = null;
+
+  const startCandidate2 = () => {
+    if (!candidate2Started) {
+      candidate2Started = true;
+      candidate2Promise = fetchSingleModel(models[1], ctrl2.signal);
+    }
+    return candidate2Promise!;
+  };
+
+  let hedgeTimerId: NodeJS.Timeout | null = null;
+  const hedgeTimer = new Promise<string>((_, reject) => {
+    hedgeTimerId = setTimeout(() => {
+      startCandidate2().then(() => {}, () => {});
+      reject(new Error('HedgeTimerTriggered'));
+    }, 2600);
+  });
+
+  const p1 = fetchSingleModel(models[0], ctrl1.signal);
+
+  try {
+    textOutput = await Promise.race([p1, hedgeTimer]);
+    if (hedgeTimerId) clearTimeout(hedgeTimerId);
+    ctrl2.abort();
+  } catch (err: any) {
+    if (hedgeTimerId) clearTimeout(hedgeTimerId);
+    if (err.message === 'HedgeTimerTriggered') {
+      try {
+        textOutput = await Promise.any([p1, candidate2Promise!]);
+        ctrl1.abort();
+        ctrl2.abort();
+      } catch {
+        // Both 1 and 2 failed, will try model 3
       }
-
-      const result = await response.json();
-      textOutput = result?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (textOutput) break;
-    } catch (err: any) {
-      lastError = err;
+    } else {
+      // Candidate 1 errored out early; immediately wait for candidate 2
+      try {
+        textOutput = await startCandidate2();
+        ctrl2.abort();
+      } catch {
+        // Candidate 2 also failed
+      }
     }
   }
 
+  // Fallback to model 3 if candidates 1 and 2 did not succeed
   if (!textOutput) {
-    throw lastError || new Error('No extraction response received from Gemini Vision model.');
+    const ctrl3 = new AbortController();
+    const timeout3 = setTimeout(() => ctrl3.abort(), 3500);
+    try {
+      textOutput = await fetchSingleModel(models[2], ctrl3.signal);
+      clearTimeout(timeout3);
+    } catch (err3: any) {
+      clearTimeout(timeout3);
+      throw new Error(`All Gemini Vision models failed: ${err3.message || String(err3)}`);
+    }
   }
 
   // Sanitize markdown code fences and preamble

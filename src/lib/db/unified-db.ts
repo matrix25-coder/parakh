@@ -47,11 +47,11 @@ export async function saveUnifiedScan(params: UnifiedScanParams): Promise<ScanRe
   // 1. Save to local SQLite
   const localRecord = createScan(params);
 
-  // 2. Sync to Supabase if configured
+  // 2. Sync to Supabase asynchronously in background (non-blocking)
   const supabase = getSupabase();
   if (supabase) {
-    try {
-      await supabase.from('scan_history').upsert({
+    Promise.resolve(
+      supabase.from('scan_history').upsert({
         id: params.id,
         user_id: params.userId,
         product_name: params.productName,
@@ -77,10 +77,14 @@ export async function saveUnifiedScan(params: UnifiedScanParams): Promise<ScanRe
         verification_code: params.verificationCode || null,
         forensic_manifest: params.forensicManifest || null,
         created_at: new Date().toISOString(),
+      })
+    )
+      .then((res: any) => {
+        if (res?.error) console.warn('Supabase background sync notice:', res.error.message);
+      })
+      .catch((err: unknown) => {
+        console.warn('Supabase background sync notice:', err);
       });
-    } catch (err) {
-      console.warn('Supabase sync notice:', err);
-    }
   }
 
   return localRecord;
